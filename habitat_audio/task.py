@@ -123,6 +123,37 @@ class GroundTruthDeltaXDeltaYSensor(Sensor):
     def get_observation(self, *args: Any, observations, episode: Episode, **kwargs: Any):
         return self._sim.get_current_ground_truth_deltax_deltay()
 
+## CHANGE DONE HERE    
+@registry.register_sensor
+class GroundTruthGeodesicDistanceSensor(Sensor):
+    r"""Mixed binaural spectrogram magnitude at the current step
+    """
+
+    def __init__(self, *args: Any, sim: Simulator, config: Config, **kwargs: Any):
+        self._sim = sim
+        super().__init__(config=config)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any):
+        return "ground_truth_geodesic_distance"
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.PATH
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        assert hasattr(self.config, 'FEATURE_SHAPE')
+        sensor_shape = self.config.FEATURE_SHAPE
+
+        return spaces.Box(
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            shape=sensor_shape,
+            dtype=np.float32,
+        )
+
+    def get_observation(self, *args: Any, observations, episode: Episode, **kwargs: Any):
+        return self._sim.get_geo_dist_to_target_audio_source()
+    
+
 @registry.register_sensor
 class MixedBinAudioMagSensor(Sensor):
     r"""Mixed binaural spectrogram magnitude at the current step
