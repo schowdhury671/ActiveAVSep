@@ -464,8 +464,8 @@ class HabitatSimAudioEnabled(HabitatSim):
         else:
             raise ValueError()
         
-        # agent_loc = agent_start_loc # this changes agent_loc to agent 0th location
-        # mov_src_loc = future_mov_src_loc # this changes moving_src_loc to (t+1) moving source location
+        #agent_loc = agent_start_loc # this changes agent_loc to agent 0th location
+        #mov_src_loc = future_mov_src_loc # this changes moving_src_loc to (t+1) moving source location
         
         return np.array([mov_src_loc[0] - agent_loc[0], mov_src_loc[2] - agent_loc[2]]) # format is np.array([delta_x, delta_y])
 
@@ -607,5 +607,5 @@ class HabitatSimAudioEnabled(HabitatSim):
         distance_to_target = self.geodesic_distance(
             current_position, self.config.AGENT_0.AUDIO_SOURCE_POSITIONS[0]
         )
-        return distance_to_target
+        return np.array([distance_to_target])
 
