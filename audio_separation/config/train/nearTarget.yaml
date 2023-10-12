@@ -16,6 +16,8 @@ RL:
 
     use_location_in_policy: True
 
+    geo_reward_wt: 0.01 # assign reward weightage here ## CHANGE DONE HERE
+
     hidden_size: 512
 
     clip_param: 0.1
