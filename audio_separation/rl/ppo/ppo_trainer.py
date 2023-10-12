@@ -150,8 +150,8 @@ class PPOTrainer(BaseRLTrainer):
         return torch.load(checkpoint_path, *args, **kwargs)
 
     def _collect_rollout_step(
-            self, rollouts_pol, rollouts_sep, current_episode_reward, current_episode_step, current_episode_dist_probs,
-            current_episode_bin_losses, current_episode_mono_losses, current_episode_monoFromMem_losses, episode_rewards,
+            self, rollouts_pol, rollouts_sep, current_episode_reward, current_episode_geo_reward, current_episode_step, current_episode_dist_probs,
+            current_episode_bin_losses, current_episode_mono_losses, current_episode_monoFromMem_losses, episode_rewards, episode_geo_rewards,
             episode_counts, episode_steps, episode_dist_probs, episode_bin_losses_allSteps, episode_mono_losses_lastStep,
             episode_mono_losses_allSteps, episode_monoFromMem_losses_lastStep, episode_monoFromMem_losses_allSteps,
     ):
@@ -644,6 +644,23 @@ class PPOTrainer(BaseRLTrainer):
                                    next_pred_monoFromMem[-1],
                                    next_gt_mono_mag,
                                    )
+        ## CHANGE DONE HERE
+        # print("@@@@@@@@@@ step_observation[ground_truth_geodesic_distance][0, 0].item(): ", step_observation["ground_truth_geodesic_distance"][0, 0].item())
+        geo_rewards = np.zeros((len(rewards),1))[:,0]
+
+        print("@!@!@!@!@!@!@geo_rewards before ", geo_rewards)
+        for reward_idx in range(len(rewards)):
+
+            # print("#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@#@\n\n")
+            # print("REWARDS::")
+            # print("step_observation[ground_truth_geodesic_distance][reward_idx, 0].item() - batch[ground_truth_geodesic_distance][reward_idx, 0].item(): ", step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item())
+            # print("rewards[reward_idx]: ", rewards[reward_idx])
+            # print("Ratio: ",(step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()) / rewards[reward_idx])
+            geo_rewards[reward_idx] = step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()
+            rewards[reward_idx] += ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]
+        
+        
+        print("@!@!@!@!@!@!@geo_rewards after ", geo_rewards)
 
         for idx, done in enumerate(dones):
             if done:
@@ -702,7 +719,12 @@ class PPOTrainer(BaseRLTrainer):
         rewards = torch.tensor(rewards, dtype=torch.float)
         rewards = rewards.unsqueeze(1)
 
+        geo_rewards = torch.tensor(geo_rewards, dtype=torch.float)
+        geo_rewards = geo_rewards.unsqueeze(1)
+
         current_episode_reward += rewards
+        current_episode_geo_reward += geo_rewards
+
         current_episode_step += 1
         current_episode_dist_probs += distribution_probs.detach().cpu()
         current_episode_bin_losses += bin_losses
@@ -715,6 +737,8 @@ class PPOTrainer(BaseRLTrainer):
         # the current episode reward is added to the episode rewards only if the current episode is done
         # the episode count will also increase by 1
         episode_rewards += (1 - masks) * current_episode_reward
+        episode_geo_rewards += (1 - masks) * current_episode_geo_reward
+
         episode_steps += (1 - masks) * current_episode_step
         episode_counts += 1 - masks
         episode_dist_probs += (1 - masks) * (current_episode_dist_probs / current_episode_step)
@@ -730,6 +754,8 @@ class PPOTrainer(BaseRLTrainer):
 
         # zeroing out current values when done
         current_episode_reward *= masks
+        current_episode_geo_reward *= masks
+
         current_episode_step *= masks
         current_episode_bin_losses *= masks
         current_episode_mono_losses *= masks
@@ -950,6 +976,11 @@ class PPOTrainer(BaseRLTrainer):
         else:
             batch = batch_obs(observations)
 
+        # if 'ground_truth_geodesic_distance' in batch:
+        #     del batch['ground_truth_geodesic_distance'] # = batch['ground_truth_geodesic_distance'].unsqueeze(-1)
+
+        # print("######## batch.keys() ground_truth_deltax_deltay: ", batch['ground_truth_deltax_deltay'].shape)
+        # print("######## batch.keys() ground_truth_geodesic_distance: ", batch['ground_truth_geodesic_distance'].shape)
         # print("######## batch.keys(): ", batch['ground_truth_deltax_deltay'].shape)
 
         for sensor in rollouts_pol.observations:
@@ -958,6 +989,8 @@ class PPOTrainer(BaseRLTrainer):
 
         # episode_x accumulates over the entire training course
         episode_rewards = torch.zeros(self.envs.num_envs, 1)
+        episode_geo_rewards = torch.zeros(self.envs.num_envs, 1)
+
         episode_counts = torch.zeros(self.envs.num_envs, 1)
         episode_steps = torch.zeros(self.envs.num_envs, 1)
         episode_dist_probs = torch.zeros(self.envs.num_envs, self.envs.action_spaces[0].n)
@@ -968,6 +1001,8 @@ class PPOTrainer(BaseRLTrainer):
         episode_monoFromMem_losses_allSteps = torch.zeros(self.envs.num_envs, 1)
 
         current_episode_reward = torch.zeros(self.envs.num_envs, 1)
+        current_episode_geo_reward = torch.zeros(self.envs.num_envs, 1)
+
         current_episode_step = torch.zeros(self.envs.num_envs, 1)
         current_episode_dist_probs = torch.zeros(self.envs.num_envs, self.envs.action_spaces[0].n)
         current_episode_bin_losses = torch.zeros(self.envs.num_envs, 1)
@@ -975,6 +1010,8 @@ class PPOTrainer(BaseRLTrainer):
         current_episode_monoFromMem_losses = torch.zeros(self.envs.num_envs, 1)
 
         window_episode_reward = deque(maxlen=ppo_cfg.reward_window_size)
+        window_episode_geo_reward = deque(maxlen=ppo_cfg.reward_window_size)
+
         window_episode_counts = deque(maxlen=ppo_cfg.reward_window_size)
         window_episode_step = deque(maxlen=ppo_cfg.reward_window_size)
         window_episode_dist_probs = deque(maxlen=ppo_cfg.reward_window_size)
@@ -1032,12 +1069,14 @@ class PPOTrainer(BaseRLTrainer):
                         rollouts_pol,
                         rollouts_sep,
                         current_episode_reward,
+                        current_episode_geo_reward,
                         current_episode_step,
                         current_episode_dist_probs,
                         current_episode_bin_losses,
                         current_episode_mono_losses,
                         current_episode_monoFromMem_losses,
                         episode_rewards,
+                        episode_geo_rewards,
                         episode_counts,
                         episode_steps,
                         episode_dist_probs,
@@ -1086,6 +1125,10 @@ class PPOTrainer(BaseRLTrainer):
                     stat_name_to_idx["rewards"] = stat_idx
                     stat_idx += 1
 
+                    stack_lst_for_stats.append(episode_geo_rewards)
+                    stat_name_to_idx["geo_rewards"] = stat_idx
+                    stat_idx += 1
+
                     stack_lst_for_stats.append(episode_counts)
                     stat_name_to_idx["counts"] = stat_idx
                     stat_idx += 1
@@ -1122,6 +1165,8 @@ class PPOTrainer(BaseRLTrainer):
                     distrib.all_reduce(stats_num_actions)
 
                     window_episode_reward.append(stats[stat_name_to_idx["rewards"]].clone())
+                    window_episode_geo_reward.append(stats[stat_name_to_idx["geo_rewards"]].clone())
+
                     window_episode_counts.append(stats[stat_name_to_idx["counts"]].clone())
                     window_episode_step.append(stats[stat_name_to_idx["steps"]].clone())
                     window_episode_dist_probs.append(stats_num_actions[stat_name_to_idx_num_actions["dist_probs"]].clone())
@@ -1144,6 +1189,8 @@ class PPOTrainer(BaseRLTrainer):
                         dist_entropy = stats[2].item() / self.world_size
                 else:
                     window_episode_reward.append(episode_rewards.clone())
+                    window_episode_geo_reward.append(episode_geo_rewards.clone())
+
                     window_episode_counts.append(episode_counts.clone())
                     window_episode_step.append(episode_steps.clone())
                     window_episode_dist_probs.append(episode_dist_probs.clone())
@@ -1154,10 +1201,10 @@ class PPOTrainer(BaseRLTrainer):
                     window_episode_monoFromMem_losses_allSteps.append(episode_monoFromMem_losses_allSteps.clone())
 
                 if (ppo_cfg.use_ddppo and self.world_rank == 0) or (not ppo_cfg.use_ddppo):
-                    stats_keys = ["count", "reward", "step", 'dist_probs', 'avg_bin_loss_allSteps',
+                    stats_keys = ["count", "reward", "geo_reward", "step", 'dist_probs', 'avg_bin_loss_allSteps',
                                   'mono_loss_lastStep', 'mono_loss_allSteps', 'monoFromMem_loss_lastStep',
                                   'monoFromMem_loss_allSteps']
-                    stats_vals = [window_episode_counts, window_episode_reward, window_episode_step, window_episode_dist_probs,
+                    stats_vals = [window_episode_counts, window_episode_reward, window_episode_geo_reward, window_episode_step, window_episode_dist_probs,
                                   window_episode_bin_losses_allSteps, window_episode_mono_losses_lastStep,
                                   window_episode_mono_losses_allSteps, window_episode_monoFromMem_losses_lastStep,
                                   window_episode_monoFromMem_losses_allSteps]
@@ -1180,6 +1227,9 @@ class PPOTrainer(BaseRLTrainer):
                     # approximately number of steps is window_size * num_steps
                     writer.add_scalar(
                         "Environment/Reward", deltas["reward"] / deltas["count"], count_steps
+                    )
+                    writer.add_scalar(
+                        "Environment/Reward Geodesic", deltas["geo_reward"] / deltas["count"], count_steps
                     )
                     logging.debug('Number of steps: {}'.format(deltas["step"] / deltas["count"]))
                     writer.add_scalar(
@@ -1231,15 +1281,19 @@ class PPOTrainer(BaseRLTrainer):
                         window_rewards = (
                             window_episode_reward[-1] - window_episode_reward[0]
                         ).sum()
+                        window_geo_rewards = (
+                            window_episode_geo_reward[-1] - window_episode_geo_reward[0]
+                        ).sum()
                         window_counts = (
                             window_episode_counts[-1] - window_episode_counts[0]
                         ).sum()
 
                         if window_counts > 0:
                             logger.info(
-                                "Average window size {} reward: {:3f}".format(
+                                "Average window size {} reward: {:3f} geo_reward: {:3f}".format(
                                     len(window_episode_reward),
                                     (window_rewards / window_counts).item(),
+                                    (window_geo_rewards / window_counts).item(),
                                 )
                             )
                         else:
