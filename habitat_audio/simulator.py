@@ -605,7 +605,7 @@ class HabitatSimAudioEnabled(HabitatSim):
         """
         current_position = self.get_agent_state().position.tolist()
         distance_to_target = self.geodesic_distance(
-            current_position, self.config.AGENT_0.AUDIO_SOURCE_POSITIONS[0]
+            current_position, self.graph.nodes[self._source_position_indices[0]]['point']
         )
         return np.array([distance_to_target])
 
