@@ -723,7 +723,9 @@ class PPOTrainer(BaseRLTrainer):
         geo_rewards = geo_rewards.unsqueeze(1)
 
         current_episode_reward += rewards
-        current_episode_geo_reward += geo_rewards
+        current_episode_geo_reward += (geo_rewards * masks.to(geo_rewards.device))
+        # print("###########shapes ",geo_rewards.shape, masks.shape)
+        # exit(0)
         # print("@!@!@!@!@!@ current_episode_geo_reward ", current_episode_geo_reward)
 
         current_episode_step += 1
@@ -740,11 +742,11 @@ class PPOTrainer(BaseRLTrainer):
         episode_rewards += (1 - masks) * current_episode_reward
         episode_geo_rewards += (1 - masks) * current_episode_geo_reward
 
-        if masks[0].item() == 0:
-            print("#@#@#@#@#@current_episode_geo_reward ", current_episode_geo_reward)
-            print("@#@#@#@#@#@ episode_geo_rewards ", episode_geo_rewards)
+        # print("************current_episode_geo_reward ", current_episode_geo_reward, masks, geo_rewards)
 
-        print("************current_episode_geo_reward ", current_episode_geo_reward)    
+        # if masks[0].item() == 0:
+            # print("#@#@#@#@#@current_episode_geo_reward ", current_episode_geo_reward)
+            # print("@#@#@#@#@#@ episode_geo_rewards ", episode_geo_rewards)    
 
         # print("@!@!@!@! episode_geo_rewards ", episode_geo_rewards)
 
@@ -764,6 +766,8 @@ class PPOTrainer(BaseRLTrainer):
         # zeroing out current values when done
         current_episode_reward *= masks
         current_episode_geo_reward *= masks
+
+        # print("?????????????current_episode_geo_reward ", current_episode_geo_reward, masks)
 
         # print("@!@!@!@!current_episode_geo_reward after mask multiplication ", current_episode_geo_reward)
 
@@ -787,7 +791,7 @@ class PPOTrainer(BaseRLTrainer):
             pred_monoFromMem=pred_monoFromMem[-1],
         )
 
-        return pth_time, env_time, self.envs.num_envs
+        return pth_time, env_time, self.envs.num_envs, current_episode_geo_reward
 
     def _update_pol(self, rollouts_pol,):
         """
@@ -1076,7 +1080,7 @@ class PPOTrainer(BaseRLTrainer):
 
                 for step in range(ppo_cfg.num_steps):
                     # with sdr, sir, sar
-                    delta_pth_time, delta_env_time, delta_steps = self._collect_rollout_step(
+                    delta_pth_time, delta_env_time, delta_steps, current_episode_geo_reward = self._collect_rollout_step(
                         rollouts_pol,
                         rollouts_sep,
                         current_episode_reward,
