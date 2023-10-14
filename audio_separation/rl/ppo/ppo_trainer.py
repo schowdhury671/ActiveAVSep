@@ -647,7 +647,7 @@ class PPOTrainer(BaseRLTrainer):
         ## CHANGE DONE HERE
         # print("@@@@@@@@@@ step_observation[ground_truth_geodesic_distance][0, 0].item(): ", step_observation["ground_truth_geodesic_distance"][0, 0].item())
         geo_rewards = np.zeros((len(rewards),1))[:,0]
-        print("@!@!@!@!@!@!@geo_rewards before ", geo_rewards)
+        # print("@!@!@!@!@!@!@geo_rewards before ", geo_rewards)
 
         for reward_idx in range(len(rewards)):
 
@@ -657,7 +657,7 @@ class PPOTrainer(BaseRLTrainer):
             # print("rewards[reward_idx]: ", rewards[reward_idx])
             # print("Ratio: ",(step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()) / rewards[reward_idx])
             geo_rewards[reward_idx] = step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()
-            print("@!@!@!@!geo_rewards[reward_idx] ", geo_rewards[reward_idx])
+            # print("@!@!@!@!geo_rewards[reward_idx] ", geo_rewards[reward_idx])
             rewards[reward_idx] = rewards[reward_idx] + ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]
         
         # print("@!@!@!@!@!@!@geo_rewards after ", geo_rewards)
@@ -724,7 +724,7 @@ class PPOTrainer(BaseRLTrainer):
 
         current_episode_reward += rewards
         current_episode_geo_reward += geo_rewards
-        print("@!@!@!@!@!@ current_episode_geo_reward ", current_episode_geo_reward)
+        # print("@!@!@!@!@!@ current_episode_geo_reward ", current_episode_geo_reward)
 
         current_episode_step += 1
         current_episode_dist_probs += distribution_probs.detach().cpu()
@@ -740,7 +740,13 @@ class PPOTrainer(BaseRLTrainer):
         episode_rewards += (1 - masks) * current_episode_reward
         episode_geo_rewards += (1 - masks) * current_episode_geo_reward
 
-        print("@!@!@!@! episode_geo_rewards ", episode_geo_rewards)
+        if masks[0].item() == 0:
+            print("#@#@#@#@#@current_episode_geo_reward ", current_episode_geo_reward)
+            print("@#@#@#@#@#@ episode_geo_rewards ", episode_geo_rewards)
+
+        print("************current_episode_geo_reward ", current_episode_geo_reward)    
+
+        # print("@!@!@!@! episode_geo_rewards ", episode_geo_rewards)
 
         episode_steps += (1 - masks) * current_episode_step
         episode_counts += 1 - masks
@@ -759,7 +765,7 @@ class PPOTrainer(BaseRLTrainer):
         current_episode_reward *= masks
         current_episode_geo_reward *= masks
 
-        print("@!@!@!@!current_episode_geo_reward after mask multiplication ", current_episode_geo_reward)
+        # print("@!@!@!@!current_episode_geo_reward after mask multiplication ", current_episode_geo_reward)
 
         current_episode_step *= masks
         current_episode_bin_losses *= masks
@@ -1290,7 +1296,7 @@ class PPOTrainer(BaseRLTrainer):
                             window_episode_geo_reward[-1] - window_episode_geo_reward[0]
                         ).sum()
 
-                        print("@!@!@!@!@!window_geo_rewards ", window_geo_rewards)
+                        # print("@!@!@!@!@!window_geo_rewards ", window_geo_rewards)
                         window_counts = (
                             window_episode_counts[-1] - window_episode_counts[0]
                         ).sum()
