@@ -176,7 +176,7 @@ class AudioCNN(nn.Module):
         output_size: The size of the embedding vector
         encode_monoFromMem: creates CNN for encoding predicted monaural from transformer memory if set to True
     """
-    def __init__(self, observation_space=None, output_size=2, encode_monoFromMem=False,):
+    def __init__(self, observation_space=None, output_size=2, encode_monoFromMem=False, encoder_type='cnn'):
         super().__init__()
         self.encode_monoFromMem = encode_monoFromMem
         # originally 2 channels for binaural and 1 channel for mono but spec. sliced up into 16 chunks along the frequency
@@ -185,6 +185,8 @@ class AudioCNN(nn.Module):
 
         self._n_input_audio = 1 if encode_monoFromMem else 2
         self._n_input_audio *= self._slice_factor
+
+        self.encoder_type = encoder_type
 
         # kernel size for different CNN layers
         self._cnn_layers_kernel_size = [(8, 8), (4, 4), (2, 2)]
@@ -209,34 +211,43 @@ class AudioCNN(nn.Module):
                 stride=np.array(stride, dtype=np.float32),
             )
 
-        self.cnn = nn.Sequential(
-            nn.Conv2d(
-                in_channels=self._n_input_audio,
-                out_channels=32,
-                kernel_size=self._cnn_layers_kernel_size[0],
-                stride=self._cnn_layers_stride[0],
-            ),
-            nn.ReLU(True),
-            nn.Conv2d(
-                in_channels=32,
-                out_channels=64,
-                kernel_size=self._cnn_layers_kernel_size[1],
-                stride=self._cnn_layers_stride[1],
-            ),
-            nn.ReLU(True),
-            nn.Conv2d(
-                in_channels=64,
-                out_channels=32,
-                kernel_size=self._cnn_layers_kernel_size[2],
-                stride=self._cnn_layers_stride[2],
-            ),
-            nn.ReLU(True),
-            Flatten(),
-            nn.Linear(32 * cnn_dims[0] * cnn_dims[1], output_size),
-            nn.ReLU(True),
-        )
+        if 'resnet' in self.encoder_type:
+            print("Initializing Resnet")
+            self.rn =  models.resnet18(pretrained=True)
+            self.rn.conv1 = nn.Conv2d(self._n_input_audio, 64, kernel_size=8, stride=4, padding=3, bias=False)
+            num_ftrs = self.rn.fc.in_features
+            self.rn.fc = nn.Sequential(nn.Linear(num_ftrs, 2), nn.Tanh())
 
-        self.layer_init()
+        else:
+            print("Initializing Simple 3 layer CNN")
+            self.cnn = nn.Sequential(
+                nn.Conv2d(
+                    in_channels=self._n_input_audio,
+                    out_channels=32,
+                    kernel_size=self._cnn_layers_kernel_size[0],
+                    stride=self._cnn_layers_stride[0],
+                ),
+                nn.ReLU(True),
+                nn.Conv2d(
+                    in_channels=32,
+                    out_channels=64,
+                    kernel_size=self._cnn_layers_kernel_size[1],
+                    stride=self._cnn_layers_stride[1],
+                ),
+                nn.ReLU(True),
+                nn.Conv2d(
+                    in_channels=64,
+                    out_channels=32,
+                    kernel_size=self._cnn_layers_kernel_size[2],
+                    stride=self._cnn_layers_stride[2],
+                ),
+                nn.ReLU(True),
+                Flatten(),
+                nn.Linear(32 * cnn_dims[0] * cnn_dims[1], output_size),
+                nn.Tanh(),
+            )
+
+            self.layer_init()
 
     def _conv_output_dim(
         self, dimension, padding, dilation, kernel_size, stride
@@ -288,7 +299,10 @@ class AudioCNN(nn.Module):
         cnn_input.append(x)
         cnn_input = torch.cat(cnn_input, dim=1)
 
-        return self.cnn(cnn_input)
+        if 'resnet' in self.encoder_type:
+            return self.rn(cnn_input)
+        else:
+            return self.cnn(cnn_input)
 
 class BinauralRIRdataset(Dataset):
 
@@ -340,6 +354,11 @@ class BinauralRIRdataset(Dataset):
         binaural_convolved = np.round(binaural_convolved).astype("int16").astype("float32")
         binaural_convolved *= (1 / 32768)
 
+        if binaural_convolved.shape[1] >= 16000:
+            binaural_convolved = binaural_convolved[:,:16000]
+        else:
+            binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
+
         # compute gt bin. magnitude
         fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
                                       n_fft=N_FFT)
@@ -351,6 +370,10 @@ class BinauralRIRdataset(Dataset):
 
         gt_bin_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
 
+
+        assert gt_bin_mag.shape[1] == 32
+        
+        '''
         if gt_bin_mag.shape[1] > 32:
             gt_bin_mag = gt_bin_mag[:,:32,:]
         elif gt_bin_mag.shape[1] == 32:
@@ -359,6 +382,7 @@ class BinauralRIRdataset(Dataset):
             dim_1 = gt_bin_mag.shape[1]
             dummy_var = np.zeros((gt_bin_mag.shape[0], 32 - dim_1, gt_bin_mag.shape[2])).astype("float32")
             gt_bin_mag = np.concatenate((gt_bin_mag, dummy_var), axis=1)
+        '''
 
         return torch.from_numpy(gt_bin_mag).permute(2,0,1), torch.from_numpy(target_xy) / 20. # 50.
 
@@ -379,10 +403,11 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "rir_regression_ckpt_lr_0.0001_relu"
+root_dir = "rir_regression_ckpt_lr_0.0001_tanh_resnet"
+encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 
 os.makedirs(root_dir, exist_ok = True)
-model = AudioCNN(output_size=2)
+model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 
 try:
     model.load_state_dict(torch.load(root_dir + '/best_val_ckpt.pth')['state_dict'])
