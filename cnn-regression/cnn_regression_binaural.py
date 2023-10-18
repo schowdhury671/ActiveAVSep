@@ -395,9 +395,9 @@ dsets['train'] = BinauralRIRdataset(filename='train_wavs.json', split='train')
 dsets['val'] = BinauralRIRdataset(filename='val_wavs.json', split='val') # added for validation
 
 dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=16, shuffle=True, num_workers=2, pin_memory=True, drop_last=True)
+dataloaders['train'] = DataLoader(dsets['train'], batch_size=32, shuffle=True, num_workers=2, pin_memory=True, drop_last=True)
 # print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=16, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
+dataloaders['val'] = DataLoader(dsets['val'], batch_size=32, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
