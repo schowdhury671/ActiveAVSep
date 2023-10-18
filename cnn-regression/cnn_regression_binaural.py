@@ -407,9 +407,12 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 root_dir = "rir_regression_ckpt_lr_0.0001_tanh_resnet"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
+device_ids = [0,1,2,3,4,5,6,7] # for 8 gpus
 
 os.makedirs(root_dir, exist_ok = True)
 model = AudioCNN(output_size=2,  encoder_type=encoder_type)
+
+model = nn.DataParallel(model, device_ids = device_ids)
 
 try:
     model.load_state_dict(torch.load(root_dir + '/best_val_ckpt.pth')['state_dict'])
