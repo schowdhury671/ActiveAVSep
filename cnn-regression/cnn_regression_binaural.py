@@ -30,6 +30,8 @@ from PIL import Image
 from tqdm import tqdm
 from scipy.signal import fftconvolve
 from scipy import signal
+from torch.utils.tensorboard import SummaryWriter
+
 
 
 # class BinauralRIRdataset(Dataset):
@@ -413,7 +415,7 @@ try:
     model.load_state_dict(torch.load(root_dir + '/best_val_ckpt.pth')['state_dict'])
     print("resuming from checkpoint!!")
 except:
-    pass
+    print("Starting new training!!")
 model = model.to(device)
 # print("loaded checkpoint successfully!!")
 
@@ -423,6 +425,8 @@ optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 num_epochs = 100
 best_val_loss = 10000000.
 best_train_loss = 10000000.
+
+writer = SummaryWriter()
 
 for _,epoch in enumerate(tqdm(range(num_epochs))):
   print(f'Epoch {epoch}/{num_epochs - 1}')
@@ -476,12 +480,19 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
           print(f'{phase} Loss: {epoch_train_loss:.4f}')
           print(f'{phase} target max: {target_max:.4f}')
           print(f'{phase} target min: {target_min:.4f}')
+          
+          writer.add_scalar('train_loss', epoch_train_loss, epoch)
+
+
           if epoch_train_loss < best_train_loss:
               best_train_loss = epoch_train_loss
               torch.save({'state_dict':model.state_dict()},root_dir + "/best_train_ckpt.pth")
       else:
           epoch_val_loss = val_loss / len(dataloaders[phase]) # added for validation
           epoch_val_l1_loss = val_l1_loss / len(dataloaders[phase]) # added for validation
+
+          writer.add_scalar('val_loss', epoch_val_loss, epoch)
+          writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
 
           print(f'{phase} Loss: {epoch_val_loss:.4f}')
           print(f'{phase} L1 Loss: {epoch_val_l1_loss:.4f}')
@@ -490,3 +501,5 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
           if epoch_val_loss < best_val_loss:
               best_val_loss = epoch_val_loss
               torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
+
+writer.close()
