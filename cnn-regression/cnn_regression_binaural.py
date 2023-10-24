@@ -43,7 +43,7 @@ from torch.utils.tensorboard import SummaryWriter
 #         f = open(filename, 'rb')
 #         self.list_wavs = json.load(f)
 #         self.list_wavs = self.list_wavs[self.split]
-#         self.image_transform = T.Compose([T.Resize(256),T.RandomCrop(224),T.ToTensor()]) # check transforms  
+#         self.image_transform = T.Compose([T.Resize(256),T.RandomCrop(224),T.ToTensor()]) # check transforms
 
 #     def __len__(self):
 #         return len(self.list_wavs)
@@ -57,14 +57,14 @@ from torch.utils.tensorboard import SummaryWriter
 #         target_xy = np.asarray(self.list_wavs[idx]['target']) # please check the keys here from the list of dicts
 
 #         waveform, sr = torchaudio.load(bin_rir_fname)
-        
+
 #         # if waveform.shape[1] != 0:
 #         #     waveform = waveform / torch.max(waveform)
 #         try:
 #             specgram = torchaudio.transforms.Spectrogram()(waveform).log2()
 #             # except:
 #                 # print("waveform.shape", waveform.shape)
-#                 # print(abcd)    
+#                 # print(abcd)
 #             # specgram = specgram.unsqueeze(0) # shape is of the form torch.Size([1, 1, 201, 331]). You may have to repeat to make 3 channel.
 #             # Verify is unsqueeze is needed or not
 
@@ -77,7 +77,7 @@ from torch.utils.tensorboard import SummaryWriter
 #             spectrogram = spectrogram.repeat(3,1,1)
 
 #             if torch.isnan(torch.mean(spectrogram)) or torch.isinf(torch.mean(spectrogram)):
-#                 spectrogram = torch.ones(3,224,224)    
+#                 spectrogram = torch.ones(3,224,224)
 #             # print(torch.max(spectrogram), torch.min(spectrogram))
 #         except:
 #             spectrogram = torch.ones(3,224,224)
@@ -216,9 +216,9 @@ class AudioCNN(nn.Module):
         if 'resnet' in self.encoder_type:
             print("Initializing Resnet")
             self.rn =  models.resnet18(pretrained=True)
-            self.rn.conv1 = nn.Conv2d(self._n_input_audio, 64, kernel_size=8, stride=4, padding=3, bias=False)
+            self.rn.conv1 = nn.Conv2d(2, 64, kernel_size=8, stride=4, padding=3, bias=False)
             num_ftrs = self.rn.fc.in_features
-            self.rn.fc = nn.Sequential(nn.Linear(num_ftrs, 2), nn.Tanh())
+            self.rn.fc = nn.Linear(num_ftrs, 2)
 
         else:
             print("Initializing Simple 3 layer CNN")
@@ -295,8 +295,8 @@ class AudioCNN(nn.Module):
         x = observations
 
         # slice along freq dimension into 16 chunks
-        x = x.view(x.size(0), x.size(1), self._slice_factor, -1, x.size(3))
-        x = x.reshape(x.size(0), -1, x.size(3),  x.size(4))
+        # x = x.view(x.size(0), x.size(1), self._slice_factor, -1, x.size(3))
+        # x = x.reshape(x.size(0), -1, x.size(3),  x.size(4))
 
         cnn_input.append(x)
         cnn_input = torch.cat(cnn_input, dim=1)
@@ -329,52 +329,64 @@ class BinauralRIRdataset(Dataset):
         target_xy = np.asarray(self.list_wavs[idx]['target']) # please check the keys here from the list of dicts
         mono_fname = self.list_wavs[idx]['mono_filename']
 
-        HOP_LENGTH = 512
-        N_FFT = 1023
-        rir_sampling_rate = 16000
-        try:
-            sr, binaural_rir = wavfile.read(bin_rir_fname)
-        except ValueError:
-            binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
-            sr = rir_sampling_rate
-        if len(binaural_rir) == 0:
-            binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
+        folder_name = 'precomputed_data'
+        gt_bin_mono_fname = folder_name + '/' + bin_rir_fname.replace("/", "_")[:-4].split("binaural_rirs")[-1] + '_' + mono_fname.replace("/", "_")[:-4].split("audio_data")[-1] + '.pt'
 
-        try:
-          sr_mono, mono_audio = wavfile.read(mono_fname)
-          # signal.resample(waveform.numpy()[:, 0:1],sr).T
-        except:
-          sr_mono, mono_audio = sr, binaural_rir[:,0]
+        if not os.path.exists(gt_bin_mono_fname):
 
-        binaural_convolved = []
+            HOP_LENGTH = 512
+            N_FFT = 1023
+            rir_sampling_rate = 16000
+            try:
+                sr, binaural_rir = wavfile.read(bin_rir_fname)
+            except ValueError:
+                binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
+                sr = rir_sampling_rate
+            if len(binaural_rir) == 0:
+                binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
 
-        for channel in range(binaural_rir.shape[-1]):
-            binaural_convolved.append(fftconvolve(mono_audio, binaural_rir[:, channel], mode="same"))
+            try:
+              sr_mono, mono_audio = wavfile.read(mono_fname)
+              # signal.resample(waveform.numpy()[:, 0:1],sr).T
+            except:
+              sr_mono, mono_audio = sr, binaural_rir[:,0]
 
-        binaural_convolved = np.array(binaural_convolved)
-        # this makes sure that the audio is in the range [-32768, 32767]
-        binaural_convolved = np.round(binaural_convolved).astype("int16").astype("float32")
-        binaural_convolved *= (1 / 32768)
+            binaural_convolved = []
 
-        if binaural_convolved.shape[1] >= 16000:
-            binaural_convolved = binaural_convolved[:,:16000]
+            for channel in range(binaural_rir.shape[-1]):
+                binaural_convolved.append(fftconvolve(mono_audio, binaural_rir[:, channel], mode="same"))
+
+            binaural_convolved = np.array(binaural_convolved)
+            # this makes sure that the audio is in the range [-32768, 32767]
+            binaural_convolved = np.round(binaural_convolved).astype("int16").astype("float32")
+            binaural_convolved *= (1 / 32768)
+
+            if binaural_convolved.shape[1] >= 16000:
+                binaural_convolved = binaural_convolved[:,:16000]
+            else:
+                binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
+
+            # compute gt bin. magnitude
+            fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
+                                          n_fft=N_FFT)
+            magnitude_l, _ = librosa.magphase(fft_windows_l)
+
+            fft_windows_r = librosa.stft(np.asfortranarray(binaural_convolved[1]), hop_length=HOP_LENGTH,
+                                          n_fft=N_FFT)
+            magnitude_r, _ = librosa.magphase(fft_windows_r)
+
+            gt_bin_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
+
+            gt_bin_mag = torch.from_numpy(gt_bin_mag)
+
+            torch.save(gt_bin_mag, gt_bin_mono_fname)
+
         else:
-            binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
 
-        # compute gt bin. magnitude
-        fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
-                                      n_fft=N_FFT)
-        magnitude_l, _ = librosa.magphase(fft_windows_l)
-
-        fft_windows_r = librosa.stft(np.asfortranarray(binaural_convolved[1]), hop_length=HOP_LENGTH,
-                                      n_fft=N_FFT)
-        magnitude_r, _ = librosa.magphase(fft_windows_r)
-
-        gt_bin_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
-
+            gt_bin_mag = torch.load(gt_bin_mono_fname)
 
         assert gt_bin_mag.shape[1] == 32
-        
+
         '''
         if gt_bin_mag.shape[1] > 32:
             gt_bin_mag = gt_bin_mag[:,:32,:]
@@ -386,7 +398,7 @@ class BinauralRIRdataset(Dataset):
             gt_bin_mag = np.concatenate((gt_bin_mag, dummy_var), axis=1)
         '''
 
-        return torch.from_numpy(gt_bin_mag).permute(2,0,1), torch.from_numpy(target_xy) / 20. # 50.
+        return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50.
 
 
 
@@ -395,9 +407,9 @@ dsets['train'] = BinauralRIRdataset(filename='train_wavs.json', split='train')
 dsets['val'] = BinauralRIRdataset(filename='val_wavs.json', split='val') # added for validation
 
 dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=32, shuffle=True, num_workers=2, pin_memory=True, drop_last=True)
+dataloaders['train'] = DataLoader(dsets['train'], batch_size=64, shuffle=True, num_workers=2, pin_memory=True, drop_last=True)
 # print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=32, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
+dataloaders['val'] = DataLoader(dsets['val'], batch_size=64, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -407,7 +419,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 root_dir = "rir_regression_ckpt_lr_0.0001_tanh_resnet"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-device_ids = [0,1,2,3,4,5,6,7] # for 8 gpus
+device_ids = [0,1,2,3] # for 4 gpus
 
 os.makedirs(root_dir, exist_ok = True)
 model = AudioCNN(output_size=2,  encoder_type=encoder_type)
@@ -454,7 +466,7 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
 
           if target_max < labels.max().item():
               target_max = labels.max().item()
-          
+
           if target_min > labels.min().item():
               target_min = labels.min().item()
 
@@ -464,13 +476,13 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
               outputs = model(inputs) # input shape should be torch.rand(2,1,512,32)
             #   import pdb; pdb.set_trace()
-              loss = criterion(outputs*20., labels*20.)
+              loss = criterion(outputs*1., labels*1.)
 
               if phase == 'train':
                   loss.backward()
                   optimizer.step()
               else:
-                  l1_loss = torch.nn.L1Loss()(outputs*20., labels*20.)    
+                  l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
 
           if phase == 'train':
               running_loss += loss.item() * inputs.size(0)
@@ -483,7 +495,7 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
           print(f'{phase} Loss: {epoch_train_loss:.4f}')
           print(f'{phase} target max: {target_max:.4f}')
           print(f'{phase} target min: {target_min:.4f}')
-          
+
           writer.add_scalar('train_loss', epoch_train_loss, epoch)
 
 
