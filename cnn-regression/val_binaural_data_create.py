@@ -253,8 +253,11 @@ class SubGraph_sampling():
 
 
       filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed'
-      cnt = sum([1 for fil in os.listdir(filedir) if mono_name in fil])
-      mono_name_chunk = mono_name + '_' + str(np.random.permutation(cnt)[0]) + '.wav'
+      fils = [fil for fil in os.listdir(filedir) if mono_name in fil]
+      cnt = len(fils)
+      mono_name_chunk = fils[np.random.permutation(cnt)[0]]
+      mono_file_path = filedir + '/' + mono_name_chunk
+      assert os.path.isfile(mono_file_path)
 
       for az in [0, 90, 180, 270]:
         if az == 0:
@@ -265,7 +268,7 @@ class SubGraph_sampling():
            delta_x_az, delta_y_az = -delta_x, -delta_y
         else:
            delta_x_az, delta_y_az = delta_y, -delta_x
-        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':filedir + '/' + mono_name_chunk}]
+        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':mono_file_path}]
 
     return sampled_list
 
