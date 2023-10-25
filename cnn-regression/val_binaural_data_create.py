@@ -251,8 +251,21 @@ class SubGraph_sampling():
         delta_y = node_to_point_dict[start_node][2] - node_to_point_dict[start_node][2]
       existing_destinations[dest_node] = 1
 
+
+      filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed'
+      cnt = sum([1 for fil in os.listdir(filedir) if mono_name in fil])
+      mono_name_chunk = mono_name + '_' + str(np.random.permutation(cnt)[0]) + '.wav'
+
       for az in [0, 90, 180, 270]:
-        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x, delta_y], 'mono_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed/' + mono_name + '_1.wav'}]
+        if az == 0:
+           delta_x_az, delta_y_az = delta_x, delta_y
+        elif az == 90:
+           delta_x_az, delta_y_az = -delta_y, delta_x
+        elif az == 180:
+           delta_x_az, delta_y_az = -delta_x, -delta_y
+        else:
+           delta_x_az, delta_y_az = delta_y, -delta_x
+        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':filedir + '/' + mono_name_chunk}]
 
     return sampled_list
 
