@@ -255,20 +255,27 @@ class SubGraph_sampling():
       filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed'
       fils = [fil for fil in os.listdir(filedir) if mono_name in fil]
       cnt = len(fils)
-      mono_name_chunk = fils[np.random.permutation(cnt)[0]]
-      mono_file_path = filedir + '/' + mono_name_chunk
-      assert os.path.isfile(mono_file_path)
 
-      for az in [0, 90, 180, 270]:
-        if az == 0:
-           delta_x_az, delta_y_az = delta_x, delta_y
-        elif az == 90:
-           delta_x_az, delta_y_az = -delta_y, delta_x
-        elif az == 180:
-           delta_x_az, delta_y_az = -delta_x, -delta_y
-        else:
-           delta_x_az, delta_y_az = delta_y, -delta_x
-        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':mono_file_path}]
+      # There are two mono files by the names: music_PMDSfAZ4-eo, 119_12172 which are missing in the valunheard_preprocessed folder. In these two instances, fils is
+      # an empty list and we remove them from json file.
+
+      if len(fils) > 0:
+
+        mono_name_chunk = fils[np.random.permutation(cnt)[0]]
+
+        mono_file_path = filedir + '/' + mono_name_chunk
+        assert os.path.isfile(mono_file_path)
+
+        for az in [0, 90, 180, 270]:
+          if az == 0:
+            delta_x_az, delta_y_az = delta_x, delta_y
+          elif az == 90:
+            delta_x_az, delta_y_az = -delta_y, delta_x
+          elif az == 180:
+            delta_x_az, delta_y_az = -delta_x, -delta_y
+          else:
+            delta_x_az, delta_y_az = delta_y, -delta_x
+          sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':mono_file_path}]
 
     return sampled_list
 
@@ -304,6 +311,6 @@ with gzip.open(file_path, "rb") as f:
 dict_wavs = {'val':list_all_wavs}
 
 # import pdb; pdb.set_trace()
-with open("val_wavs.json", "w") as outfile:
+with open("val_wavs_rectified_25oct.json", "w") as outfile:
     # json_data refers to the above JSON
     json.dump(dict_wavs, outfile)
