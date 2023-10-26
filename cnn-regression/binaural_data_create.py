@@ -163,8 +163,8 @@ class SubGraph_sampling():
     attempts = 50
     i = 0
     while dest_found==False and i < attempts:
-      perm_arr = node_arr[np.random.permutation(len(node_arr))]
-      dest_node = perm_arr[0]
+      # perm_arr = node_arr[np.random.permutation(len(node_arr))]
+      dest_node = node_arr[np.random.randint(len(node_arr))]
       if dest_node not in existing_destinations:
         if dest_node != start_node:
           dest_found = True
@@ -280,6 +280,7 @@ directory = "./content/"
 
 list_all_wavs = []
 
+subgraph_sampling = SubGraph_sampling(points_to_sample=1) 
 for ite, filename in enumerate(tqdm(os.listdir(directory))):
     # if ite == 2:
     #    break
@@ -307,7 +308,7 @@ for ite, filename in enumerate(tqdm(os.listdir(directory))):
                         start_node = node
                         break
             
-                list_all_wavs += SubGraph_sampling(points_to_sample=1).execute(graph, start_node, scene['episodes'][0]['scene_id'].split("/")[0], list_episodes[i]['info'][0]['sound'])
+                list_all_wavs += subgraph_sampling.execute(graph, start_node, scene['episodes'][0]['scene_id'].split("/")[0], list_episodes[i]['info'][0]['sound'])
 
 dict_wavs = {'train':list_all_wavs}
 
