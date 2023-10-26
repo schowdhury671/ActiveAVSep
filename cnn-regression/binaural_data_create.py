@@ -257,7 +257,7 @@ class SubGraph_sampling():
       # fils = [fil for fil in self.list_monos if mono_name in fil]
       fils = self.all_sounds
       cnt = len(fils)
-      mono_name_chunk = fils[np.random.permutation(cnt)[0]]
+      mono_name_chunk = fils[np.random.randint(cnt)]
       mono_file_path = self.filedir + '/' + mono_name_chunk
       assert os.path.isfile(mono_file_path)
 
