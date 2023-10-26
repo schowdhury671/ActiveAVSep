@@ -85,6 +85,8 @@ class SubGraph_sampling():
         self.points_to_sample = points_to_sample
         self.plotting = False
         self.actions_dict = {'STOP':0, 'FORWARD':1, 'LEFT':2, 'RIGHT':3}
+        self.filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed'
+        self.all_sounds = os.listdir(self.filedir)
 
   def find_subgraphs(self, G, plotting=False):
 
@@ -251,8 +253,9 @@ class SubGraph_sampling():
         delta_y = node_to_point_dict[start_node][2] - node_to_point_dict[start_node][2]
       existing_destinations[dest_node] = 1
 
-      filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed'
-      fils = [fil for fil in os.listdir(filedir) if mono_name in fil]
+      
+      # fils = [fil for fil in self.list_monos if mono_name in fil]
+      fils = self.all_sounds
       cnt = len(fils)
       mono_name_chunk = fils[np.random.permutation(cnt)[0]]
       mono_file_path = filedir + '/' + mono_name_chunk
