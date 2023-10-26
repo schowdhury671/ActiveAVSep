@@ -285,7 +285,7 @@ directory = "./content/"
 
 list_all_wavs = []
 
-file_path = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/val_100episodes/val_100episodes.json.gz' # give the full path here along with filename
+file_path = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/valUnheard_100episodes/valUnheard_100episodes.json.gz'
 with gzip.open(file_path, "rb") as f:
     scene = json.loads(f.read(), encoding="utf-8")
 
