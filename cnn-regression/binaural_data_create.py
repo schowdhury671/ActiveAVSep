@@ -312,7 +312,7 @@ for ite, filename in enumerate(tqdm(os.listdir(directory))):
 dict_wavs = {'train':list_all_wavs}
 
 # import pdb; pdb.set_trace()
-with open("train_wavs.json", "w") as outfile:
+with open("train_wavs_rectified_25oct.json", "w") as outfile:
     # json_data refers to the above JSON
     json.dump(dict_wavs, outfile)
         
