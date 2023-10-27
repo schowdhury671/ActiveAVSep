@@ -69,6 +69,7 @@ class HabitatSimAudioEnabled(HabitatSim):
         super().__init__(config)
 
         assert self.config.SCENE_DATASET in ["mp3d"], "SCENE_DATASET needs to be in ['mp3d']"
+        self.IS_GT_LOCATION_CORRECTLY_ORIENTED = self.config.IS_GT_LOCATION_CORRECTLY_ORIENTED
         self._source_position_indices = None
         self.moving_source_pointer = 0
         self._one_step_ahead_source = None
@@ -466,8 +467,27 @@ class HabitatSimAudioEnabled(HabitatSim):
         
         # agent_loc = agent_start_loc # this changes agent_loc to agent 0th location
         # mov_src_loc = future_mov_src_loc # this changes moving_src_loc to (t+1) moving source location
-        
-        return np.array([mov_src_loc[0] - agent_loc[0], mov_src_loc[2] - agent_loc[2]]) # format is np.array([delta_x, delta_y])
+
+        del_x_az = mov_src_loc[0] - agent_loc[0]
+        del_y_az = mov_src_loc[2] - agent_loc[2]
+
+        if self.IS_GT_LOCATION_CORRECTLY_ORIENTED:
+
+            az = self.azimuth_angle()
+
+            if az == 0:
+                delta_x_az, delta_y_az = del_x_az, del_y_az
+            elif az == 90:
+                delta_x_az, delta_y_az = -del_y_az, del_x_az
+            elif az == 180:
+                delta_x_az, delta_y_az = -del_x_az, -del_y_az
+            else:
+                delta_x_az, delta_y_az = del_y_az, -del_x_az
+        else:
+
+            delta_x_az, delta_y_az = del_x_az, del_y_az
+            
+        return np.array([delta_x_az, delta_y_az]) # format is np.array([delta_x, delta_y])
 
     def get_current_mixed_bin_audio_mag_spec(self):
         r"""
@@ -605,7 +625,7 @@ class HabitatSimAudioEnabled(HabitatSim):
         """
         current_position = self.get_agent_state().position.tolist()
         distance_to_target = self.geodesic_distance(
-            current_position, self.config.AGENT_0.AUDIO_SOURCE_POSITIONS[0]
+            current_position, self.graph.nodes[self._source_position_indices[0]]['point']
         )
-        return distance_to_target
+        return np.array([distance_to_target])
 
