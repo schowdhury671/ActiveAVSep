@@ -73,6 +73,7 @@ _C.RL.DISTANCE_REWARD_SCALE = 1.0
 _C.RL.PPO = CN()
 _C.RL.PPO.pretrained_passive_separators_ckpt = ""
 _C.RL.PPO.use_location_in_policy = False
+_C.RL.PPO.geo_reward_wt = 0.01 ## CHANGE DONE HERE
 _C.RL.PPO.train_passive_separators = False
 _C.RL.PPO.clip_param = 0.2
 _C.RL.PPO.ppo_epoch = 4
@@ -140,6 +141,14 @@ _TC.TASK.GT_DELTAX_DELTAY_SENSOR = CN()
 _TC.TASK.GT_DELTAX_DELTAY_SENSOR.TYPE = "GroundTruthDeltaXDeltaYSensor"
 _TC.TASK.GT_DELTAX_DELTAY_SENSOR.FEATURE_SHAPE = [2]
 
+## CHANGE DONE HERE
+# -----------------------------------------------------------------------------
+# GROUND TRUTH GEODESIC DISTANCE SENSOR
+# -----------------------------------------------------------------------------
+_TC.TASK.GT_GEODESIC_DISTANCE_SENSOR = CN()
+_TC.TASK.GT_GEODESIC_DISTANCE_SENSOR.TYPE = "GroundTruthGeodesicDistanceSensor"
+_TC.TASK.GT_GEODESIC_DISTANCE_SENSOR.FEATURE_SHAPE = [1]
+
 # -----------------------------------------------------------------------------
 # MIXED BINAURAL AUDIO PHASE SENSOR
 # -----------------------------------------------------------------------------
@@ -174,6 +183,7 @@ _TC.TASK.POSE_SENSOR.TYPE = "PoseSensor"
 # habitat_audio
 # -----------------------------------------------------------------------------
 _TC.SIMULATOR.SEED = -1
+_TC.SIMULATOR.IS_GT_LOCATION_CORRECTLY_ORIENTED = False
 _TC.SIMULATOR.SCENE_DATASET = "mp3d"
 _TC.SIMULATOR.MAX_EPISODE_STEPS = 20 
 _TC.SIMULATOR.GRID_SIZE = 1.0
