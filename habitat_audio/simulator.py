@@ -473,7 +473,7 @@ class HabitatSimAudioEnabled(HabitatSim):
 
         if self.IS_GT_LOCATION_CORRECTLY_ORIENTED:
 
-            az = self.azimuth_angle()
+            az = self.azimuth_angle
 
             if az == 0:
                 delta_x_az, delta_y_az = del_x_az, del_y_az
