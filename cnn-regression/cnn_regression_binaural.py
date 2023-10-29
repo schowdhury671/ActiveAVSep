@@ -441,7 +441,7 @@ model = model.to(device)
 # print("loaded checkpoint successfully!!")
 
 criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
+optimizer = optim.Adam(model.parameters(), lr=0.001, eps=1e-8)
 
 num_epochs = 100
 best_val_loss = 10000000.
