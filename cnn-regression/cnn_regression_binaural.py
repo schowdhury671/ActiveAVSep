@@ -412,9 +412,9 @@ dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oc
 dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json', split='val') # added for validation
 
 dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=256, shuffle=False, num_workers=2, pin_memory=True, drop_last=True)
+dataloaders['train'] = DataLoader(dsets['train'], batch_size=512, shuffle=True, num_workers=4, pin_memory=True, drop_last=False)
 # print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=256, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
+dataloaders['val'] = DataLoader(dsets['val'], batch_size=512, shuffle=False, num_workers=4, pin_memory=True, drop_last=False) # added for validation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -422,7 +422,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "rir_regression_ckpt_resnet_filtered_25oct_rectified_20_lr_1e-4_MSE"
+root_dir = "regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor1"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 device_ids = [0,1,2,3] # for 4 gpus
 
@@ -440,14 +440,18 @@ except:
 model = model.to(device)
 # print("loaded checkpoint successfully!!")
 
-criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
-optimizer = optim.Adam(model.parameters(), lr=0.001, eps=1e-8)
+criterion = torch.nn.L1Loss()  #   torch.nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
 num_epochs = 100
 best_val_loss = 10000000.
 best_train_loss = 10000000.
 
 writer = SummaryWriter()
+
+
+print("len of train dataloader ", len(dataloaders['train']))
+print("len of val dataloader ", len(dataloaders['val']))
 
 for _,epoch in enumerate(tqdm(range(num_epochs))):
   print(f'Epoch {epoch}/{num_epochs - 1}')
