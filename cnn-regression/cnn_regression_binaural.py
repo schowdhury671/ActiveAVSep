@@ -161,7 +161,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # **********************************************************************************************
 
-
+flag = False
 
 
 class Flatten(nn.Module):
@@ -215,7 +215,7 @@ class AudioCNN(nn.Module):
 
         if 'resnet' in self.encoder_type:
             print("Initializing Resnet")
-            self.rn =  models.resnet18(pretrained=True)
+            self.rn =  models.resnet18(pretrained=False)
             self.rn.conv1 = nn.Conv2d(2, 64, kernel_size=8, stride=4, padding=3, bias=False)
             num_ftrs = self.rn.fc.in_features
             self.rn.fc = nn.Linear(num_ftrs, 2)
@@ -331,6 +331,9 @@ class BinauralRIRdataset(Dataset):
 
         folder_name = 'precomputed_data'
         gt_bin_mono_fname = folder_name + '/' + bin_rir_fname.replace("/", "_")[:-4].split("binaural_rirs")[-1] + '_' + mono_fname.replace("/", "_")[:-4].split("audio_data")[-1] + '.pt'
+        # print("@!@!@!@!@!gt_bin_mono_fname ", gt_bin_mono_fname)
+        # assert False
+
 
         if not os.path.exists(gt_bin_mono_fname):
 
@@ -397,19 +400,21 @@ class BinauralRIRdataset(Dataset):
             dummy_var = np.zeros((gt_bin_mag.shape[0], 32 - dim_1, gt_bin_mag.shape[2])).astype("float32")
             gt_bin_mag = np.concatenate((gt_bin_mag, dummy_var), axis=1)
         '''
-
-        return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50.
+        if flag:
+            return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 20. # 50.
+        else:
+            return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50. 
 
 
 
 dsets = dict()
-dsets['train'] = BinauralRIRdataset(filename='train_wavs.json', split='train')
-dsets['val'] = BinauralRIRdataset(filename='val_wavs.json', split='val') # added for validation
+dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json', split='train')
+dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json', split='val') # added for validation
 
 dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=64, shuffle=True, num_workers=2, pin_memory=True, drop_last=True)
+dataloaders['train'] = DataLoader(dsets['train'], batch_size=256, shuffle=False, num_workers=2, pin_memory=True, drop_last=True)
 # print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=64, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
+dataloaders['val'] = DataLoader(dsets['val'], batch_size=256, shuffle=True, num_workers=2, pin_memory=True, drop_last=True) # added for validation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -417,7 +422,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "rir_regression_ckpt_lr_0.0001_tanh_resnet"
+root_dir = "rir_regression_ckpt_resnet_filtered_25oct_rectified_20_lr_1e-4_MSE"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 device_ids = [0,1,2,3] # for 4 gpus
 
@@ -430,11 +435,12 @@ try:
     model.load_state_dict(torch.load(root_dir + '/best_val_ckpt.pth')['state_dict'])
     print("resuming from checkpoint!!")
 except:
-    print("Starting new training!!")
+    print("Starting new training with foldername ", root_dir)
+    print("")
 model = model.to(device)
 # print("loaded checkpoint successfully!!")
 
-criterion = torch.nn.L1Loss() # torch.nn.MSELoss()
+criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
 num_epochs = 100
@@ -482,7 +488,12 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
                   loss.backward()
                   optimizer.step()
               else:
-                  l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
+                if flag:
+                    l1_loss = torch.nn.L1Loss()(outputs*20., labels*20.)
+                else:
+                    l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
+
+                        
 
           if phase == 'train':
               running_loss += loss.item() * inputs.size(0)
@@ -518,3 +529,6 @@ for _,epoch in enumerate(tqdm(range(num_epochs))):
               torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
 
 writer.close()
+
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3 python cnn_regression_binaural.py
