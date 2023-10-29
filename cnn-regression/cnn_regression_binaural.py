@@ -335,58 +335,58 @@ class BinauralRIRdataset(Dataset):
         # assert False
 
 
-        if not os.path.exists(gt_bin_mono_fname):
+        # if not os.path.exists(gt_bin_mono_fname):
 
-            HOP_LENGTH = 512
-            N_FFT = 1023
-            rir_sampling_rate = 16000
-            try:
-                sr, binaural_rir = wavfile.read(bin_rir_fname)
-            except ValueError:
-                binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
-                sr = rir_sampling_rate
-            if len(binaural_rir) == 0:
-                binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
+        HOP_LENGTH = 512
+        N_FFT = 1023
+        rir_sampling_rate = 16000
+        try:
+            sr, binaural_rir = wavfile.read(bin_rir_fname)
+        except ValueError:
+            binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
+            sr = rir_sampling_rate
+        if len(binaural_rir) == 0:
+            binaural_rir = np.zeros((rir_sampling_rate, 2)).astype("float32")
 
-            try:
-              sr_mono, mono_audio = wavfile.read(mono_fname)
-              # signal.resample(waveform.numpy()[:, 0:1],sr).T
-            except:
-              sr_mono, mono_audio = sr, binaural_rir[:,0]
+        try:
+            sr_mono, mono_audio = wavfile.read(mono_fname)
+            # signal.resample(waveform.numpy()[:, 0:1],sr).T
+        except:
+            sr_mono, mono_audio = sr, binaural_rir[:,0]
 
-            binaural_convolved = []
+        binaural_convolved = []
 
-            for channel in range(binaural_rir.shape[-1]):
-                binaural_convolved.append(fftconvolve(mono_audio, binaural_rir[:, channel], mode="same"))
+        for channel in range(binaural_rir.shape[-1]):
+            binaural_convolved.append(fftconvolve(mono_audio, binaural_rir[:, channel], mode="same"))
 
-            binaural_convolved = np.array(binaural_convolved)
-            # this makes sure that the audio is in the range [-32768, 32767]
-            binaural_convolved = np.round(binaural_convolved).astype("int16").astype("float32")
-            binaural_convolved *= (1 / 32768)
+        binaural_convolved = np.array(binaural_convolved)
+        # this makes sure that the audio is in the range [-32768, 32767]
+        binaural_convolved = np.round(binaural_convolved).astype("int16").astype("float32")
+        binaural_convolved *= (1 / 32768)
 
-            if binaural_convolved.shape[1] >= 16000:
-                binaural_convolved = binaural_convolved[:,:16000]
-            else:
-                binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
-
-            # compute gt bin. magnitude
-            fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
-                                          n_fft=N_FFT)
-            magnitude_l, _ = librosa.magphase(fft_windows_l)
-
-            fft_windows_r = librosa.stft(np.asfortranarray(binaural_convolved[1]), hop_length=HOP_LENGTH,
-                                          n_fft=N_FFT)
-            magnitude_r, _ = librosa.magphase(fft_windows_r)
-
-            gt_bin_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
-
-            gt_bin_mag = torch.from_numpy(gt_bin_mag)
-
-            torch.save(gt_bin_mag, gt_bin_mono_fname)
-
+        if binaural_convolved.shape[1] >= 16000:
+            binaural_convolved = binaural_convolved[:,:16000]
         else:
+            binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
 
-            gt_bin_mag = torch.load(gt_bin_mono_fname)
+        # compute gt bin. magnitude
+        fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
+                                        n_fft=N_FFT)
+        magnitude_l, _ = librosa.magphase(fft_windows_l)
+
+        fft_windows_r = librosa.stft(np.asfortranarray(binaural_convolved[1]), hop_length=HOP_LENGTH,
+                                        n_fft=N_FFT)
+        magnitude_r, _ = librosa.magphase(fft_windows_r)
+
+        gt_bin_mag = np.stack([magnitude_l, magnitude_r], axis=-1).astype("float32")
+
+        gt_bin_mag = torch.from_numpy(gt_bin_mag)
+
+        #     torch.save(gt_bin_mag, gt_bin_mono_fname)
+
+        # else:
+
+        #     gt_bin_mag = torch.load(gt_bin_mono_fname)
 
         assert gt_bin_mag.shape[1] == 32
 
