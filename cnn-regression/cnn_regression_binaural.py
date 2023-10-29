@@ -431,17 +431,21 @@ model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 
 model = nn.DataParallel(model, device_ids = device_ids)
 
+criterion = torch.nn.L1Loss()  #   torch.nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
+
 try:
-    model.load_state_dict(torch.load(root_dir + '/best_val_ckpt.pth')['state_dict'])
+    val_checkpoint = torch.load(root_dir + '/best_val_ckpt.pth')
+    model.load_state_dict(val_checkpoint['state_dict'])
+    optimizer.load_state_dict(val_checkpoint['optimizer'])
+    start_epoch = val_checkpoint['epoch']
     print("resuming from checkpoint!!")
 except:
+    start_epoch = 0
     print("Starting new training with foldername ", root_dir)
     print("")
 model = model.to(device)
 # print("loaded checkpoint successfully!!")
-
-criterion = torch.nn.L1Loss()  #   torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
 num_epochs = 100
 best_val_loss = 10000000.
@@ -453,7 +457,7 @@ writer = SummaryWriter()
 print("len of train dataloader ", len(dataloaders['train']))
 print("len of val dataloader ", len(dataloaders['val']))
 
-for _,epoch in enumerate(tqdm(range(num_epochs))):
+for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
   print(f'Epoch {epoch}/{num_epochs - 1}')
   print('-' * 10)
 
