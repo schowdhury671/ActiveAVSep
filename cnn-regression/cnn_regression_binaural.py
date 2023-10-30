@@ -460,8 +460,13 @@ if os.path.isdir(tb_log_dir):
         tb_log_dir_2 = os.path.join(root_dir, f"tb_{i}")
         if not os.path.isdir(tb_log_dir_2):
             os.system(f"mv {tb_log_dir} {tb_log_dir_2}")
+            break
 
-writer = SummaryWriter()
+
+assert not os.path.isdir(tb_log_dir) 
+os.makedirs(tb_log_dir)
+
+writer = SummaryWriter(log_dir=tb_log_dir)
 
 
 print("len of train dataloader ", len(dataloaders['train']))
