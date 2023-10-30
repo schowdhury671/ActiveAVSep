@@ -447,6 +447,11 @@ except:
 model = model.to(device)
 # print("loaded checkpoint successfully!!")
 
+for state in optimizer.state.values():
+    for k, v in state.items():
+        if isinstance(v, torch.Tensor):
+            state[k] = v.to(device)
+
 num_epochs = 100
 best_val_loss = 10000000.
 best_train_loss = 10000000.
