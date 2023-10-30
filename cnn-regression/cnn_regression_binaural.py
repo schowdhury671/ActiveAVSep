@@ -451,6 +451,16 @@ num_epochs = 100
 best_val_loss = 10000000.
 best_train_loss = 10000000.
 
+
+tb_log_subdir = "tb" 
+tb_log_dir = os.path.join(root_dir, "tb")
+
+if os.path.isdir(tb_log_dir):
+    for i in range(1, 10000):
+        tb_log_dir_2 = os.path.join(root_dir, f"tb_{i}")
+        if not os.path.isdir(tb_log_dir_2):
+            os.system(f"mv {tb_log_dir} {tb_log_dir_2}")
+
 writer = SummaryWriter()
 
 
@@ -524,7 +534,7 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
               torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch},root_dir + "/best_train_ckpt.pth")
       else:
           epoch_val_loss = val_loss / len(dataloaders[phase]) # added for validation
-          epoch_val_l1_loss = val_l1_loss / len(dataloaders[phase]) # added for validation
+          epoch_val_l1_loss = val_l1_loss / len(dsets[phase]) # added for validation
 
           writer.add_scalar('val_loss', epoch_val_loss, epoch)
           writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
