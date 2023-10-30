@@ -537,7 +537,7 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
               val_l1_loss += l1_loss.item() * inputs.size(0)
 
       if phase == 'train':
-          epoch_train_loss = running_loss / len(dataloaders[phase])
+          epoch_train_loss = running_loss / len(dsets[phase])
           print(f'{phase} Loss: {epoch_train_loss:.4f}')
           print(f'{phase} target max: {target_max:.4f}')
           print(f'{phase} target min: {target_min:.4f}')
@@ -548,9 +548,10 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
           if epoch_train_loss < best_train_loss:
               best_train_loss = epoch_train_loss
               # torch.save({'state_dict':model.state_dict()},root_dir + "/best_train_ckpt.pth")
-              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch},root_dir + "/best_train_ckpt.pth")
+              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
+
       else:
-          epoch_val_loss = val_loss / len(dataloaders[phase]) # added for validation
+          epoch_val_loss = val_loss / len(dsets[phase]) # added for validation
           epoch_val_l1_loss = val_l1_loss / len(dsets[phase]) # added for validation
 
           writer.add_scalar('val_loss', epoch_val_loss, epoch)
@@ -563,7 +564,7 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
           if epoch_val_loss < best_val_loss:
               best_val_loss = epoch_val_loss
               # torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
-              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch},root_dir + "/best_val_ckpt.pth")
+              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_val_loss},root_dir + "/best_val_ckpt.pth")
 
       torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss},root_dir + "/last_ckpt.pth")    
 
