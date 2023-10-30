@@ -438,7 +438,7 @@ try:
     val_checkpoint = torch.load(root_dir + '/best_val_ckpt.pth')
     model.load_state_dict(val_checkpoint['state_dict'])
     optimizer.load_state_dict(val_checkpoint['optimizer'])
-    start_epoch = val_checkpoint['epoch']
+    start_epoch = val_checkpoint['epoch'] + 1
     print("resuming from checkpoint!!")
 except:
     start_epoch = 0
@@ -537,6 +537,8 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
               best_val_loss = epoch_val_loss
               # torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
               torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch},root_dir + "/best_val_ckpt.pth")
+
+      torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch},root_dir + "/last_ckpt.pth")    
 
 writer.close()
 
