@@ -65,7 +65,7 @@ class PolicyNet(Net):
 
         if self._use_location_in_policy:
             if use_predictedLocation_in_policy:
-                self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_type, return_feats=True,)
+                self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_encoderType, return_feats=True,)
             else:
                 self.location_encoder = nn.Sequential(nn.Linear(2, self._hidden_size), nn.ReLU(),
                                                       nn.Linear(self._hidden_size, self._hidden_size))
@@ -116,15 +116,19 @@ class PolicyNet(Net):
                 assert pred_binSepMasks is not None
                 inp_ = observations["mixed_bin_audio_mag"]
                 inp_ = torch.exp(inp_) - 1
+                # print("h0: ", inp_.shape, pred_binSepMasks.shape)
+                # exit()
                 inp_ = inp_ * pred_binSepMasks
+                inp_ = inp_.permute((0, 3, 1, 2))
                 self.location_encoder.eval()
                 with torch.no_grad():
                     temp_loc_enc = self.location_encoder(inp_)
                     temp_loc_enc = temp_loc_enc.detach()
-                print("policy.py h1")
+                # print("policy.py h1")
             else:
                 temp_loc_enc = self.location_encoder(observations['ground_truth_deltax_deltay'])
             x.append(temp_loc_enc)
+            # print("#@#@#@#@#@#@#@x is ", len(x))
 
             # print("################# temp_loc_enc.shape: ", temp_loc_enc.shape)
 
@@ -135,7 +139,7 @@ class PolicyNet(Net):
         del temp_bin_enc
         del temp_mono_enc
         
-        
+        # print("@!@!@len ", len(x), len(x[0][0]), len(x[-1][0]))   
         try:
             #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\nx[0], x[1], x[2] shape is ", x[0].shape, x[1].shape, x[2].shape)
             x1 = torch.cat(x, dim=1)
@@ -150,9 +154,11 @@ class PolicyNet(Net):
             # print("@@@@@@@@@@@@@@@@@@@x1 ", x1.shape)
             # print("@@@@@@@@@@@@@@@@@@@rnn_hidden_states ", rnn_hidden_states.shape)
 
-            if(x1.shape == (1, 1536)):
-                # print("*##*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#coming inside this\n\n")  # added by Sanjoy
-                x1 = torch.cat((x1,x1), 0)
+            # if(x1.shape == (1, 1536)):
+            #     # print("*##*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#*#coming inside this\n\n")  # added by Sanjoy
+            #     x1 = torch.cat((x1,x1), 0)
+
+            # print("#@#@#@#x1.shape ", x1.shape)
             x2, rnn_hidden_states_new = self.state_encoder(x1, rnn_hidden_states, masks)
             # print("@@@@@@@@@@@@@@@@@@@x2 ", x2.shape)
             # print("@@@@@@@@@@@@@@@@@@@rnn_hidden_states new ", rnn_hidden_states_new.shape)
