@@ -658,7 +658,7 @@ class PPOTrainer(BaseRLTrainer):
             # print("Ratio: ",(step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()) / rewards[reward_idx])
             geo_rewards[reward_idx] = step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()
             # print("@!@!@!@!geo_rewards[reward_idx] ", geo_rewards[reward_idx])
-            # rewards[reward_idx] = ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]    #  + rewards[reward_idx] 
+            # rewards[reward_idx] = ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]   # + rewards[reward_idx] 
             rewards[reward_idx] = ppo_cfg.sep_reward_wt * rewards[reward_idx] + ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]
         
         # print("@!@!@!@!@!@!@geo_rewards after ", geo_rewards)
@@ -956,6 +956,37 @@ class PPOTrainer(BaseRLTrainer):
 
         self._setup_actor_critic_agent()
         self._load_pretrained_passive_separators()
+
+        if ppo_cfg.use_predictedLocation_in_policy:
+            locationPredictor_ckpt = ppo_cfg.locationPredictor_ckpt
+            assert os.path.isfile(locationPredictor_ckpt)
+            pretrained_locationPredictor_stateDict = torch.load(locationPredictor_ckpt, map_location="cpu")["state_dict"]
+            locationPredictor_stateDict = self.actor_critic.pol_net.location_encoder.state_dict()
+
+
+            # print(pretrained_locationPredictor_stateDict.keys())
+            # print("-" * 80)
+            # print("-" * 80)
+            # print("-" * 80)
+            # print(locationPredictor_stateDict.keys())
+            # exit("here")
+
+            for k, v in pretrained_locationPredictor_stateDict.items():
+                if "module." in k:
+                    # print("h0: ", k, k[7:])
+                    if k[7:] in locationPredictor_stateDict:
+                        # print("h1")
+                        locationPredictor_stateDict[k[7:]].copy_(v)
+                        assert torch.all(locationPredictor_stateDict[k[7:]].cpu() == v).item()
+                    # else:
+                    #     # print("h2")
+                else:
+                    if k in locationPredictor_stateDict:
+                        # print("h3")
+                        locationPredictor_stateDict[k].copy_(v)
+                    # else:
+                    #     print("h4")
+            # exit()
 
         if ppo_cfg.use_ddppo:
             self.agent.init_distributed(find_unused_params=True)
