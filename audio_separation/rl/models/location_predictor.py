@@ -4,7 +4,7 @@ import torch.nn as nn
 import os
 import copy
 import numpy as np
-import pandas as pd
+# import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 import json
@@ -222,9 +222,10 @@ class AudioCNN(nn.Module):
             self.rn.conv1 = nn.Conv2d(2, 64, kernel_size=8, stride=4, padding=3, bias=False)
             num_ftrs = self.rn.fc.in_features
             if return_feats:
-                self.rn.fc = nn.Linear(num_ftrs, 2)
-            else:
                 self.rn.fc = nn.Identity()
+            else:
+                self.rn.fc = nn.Linear(num_ftrs, 2)
+                
         else:
             print("Initializing Simple 3 layer CNN")
             self.cnn = nn.Sequential(
@@ -413,168 +414,168 @@ class BinauralRIRdataset(Dataset):
 
 
 
-dsets = dict()
-dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json', split='train')
-dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json', split='val') # added for validation
+# dsets = dict()
+# dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json', split='train')
+# dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json', split='val') # added for validation
 
-dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=512, shuffle=True, num_workers=4, pin_memory=True, drop_last=False)
-# print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=512, shuffle=False, num_workers=4, pin_memory=True, drop_last=False) # added for validation
+# dataloaders = dict()
+# dataloaders['train'] = DataLoader(dsets['train'], batch_size=512, shuffle=True, num_workers=4, pin_memory=True, drop_last=False)
+# # print("done!!!")
+# dataloaders['val'] = DataLoader(dsets['val'], batch_size=512, shuffle=False, num_workers=4, pin_memory=True, drop_last=False) # added for validation
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# model = models.resnet18(pretrained=True)
-# num_ftrs = model.fc.in_features
-# model.fc = torch.nn.Linear(num_ftrs, 2)
+# # model = models.resnet18(pretrained=True)
+# # num_ftrs = model.fc.in_features
+# # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor20"
-encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-device_ids = [0,1,2,3] # for 4 gpus
+# root_dir = "regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor20"
+# encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
+# device_ids = [0,1,2,3] # for 4 gpus
 
-os.makedirs(root_dir, exist_ok = True)
-model = AudioCNN(output_size=2,  encoder_type=encoder_type)
+# os.makedirs(root_dir, exist_ok = True)
+# model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 
-model = nn.DataParallel(model, device_ids = device_ids)
+# model = nn.DataParallel(model, device_ids = device_ids)
 
-criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()    
-optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
+# criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()    
+# optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
-try:
-    val_checkpoint = torch.load(root_dir + '/best_val_ckpt.pth')
-    model.load_state_dict(val_checkpoint['state_dict'])
-    optimizer.load_state_dict(val_checkpoint['optimizer'])
-    start_epoch = val_checkpoint['epoch'] + 1
-    print("resuming from checkpoint: ", root_dir)
-except:
-    start_epoch = 0
-    print("Starting new training with foldername: ", root_dir)
-    print("")
-model = model.to(device)
-# print("loaded checkpoint successfully!!")
+# try:
+#     val_checkpoint = torch.load(root_dir + '/best_val_ckpt.pth')
+#     model.load_state_dict(val_checkpoint['state_dict'])
+#     optimizer.load_state_dict(val_checkpoint['optimizer'])
+#     start_epoch = val_checkpoint['epoch'] + 1
+#     print("resuming from checkpoint: ", root_dir)
+# except:
+#     start_epoch = 0
+#     print("Starting new training with foldername: ", root_dir)
+#     print("")
+# model = model.to(device)
+# # print("loaded checkpoint successfully!!")
 
-for state in optimizer.state.values():
-    for k, v in state.items():
-        if isinstance(v, torch.Tensor):
-            state[k] = v.to(device)
+# for state in optimizer.state.values():
+#     for k, v in state.items():
+#         if isinstance(v, torch.Tensor):
+#             state[k] = v.to(device)
 
-num_epochs = 100
-# best_val_loss = 10000000.
-# best_train_loss = 10000000.
+# num_epochs = 100
+# # best_val_loss = 10000000.
+# # best_train_loss = 10000000.
 
-try:
-    best_val_loss = val_checkpoint['best_val_loss']
-    best_train_loss = val_checkpoint['best_train_loss']
-except:
-    best_val_loss = float('inf')
-    best_train_loss = float('inf')
-
-
-tb_log_subdir = "tb" 
-tb_log_dir = os.path.join(root_dir, "tb")
-
-if os.path.isdir(tb_log_dir):
-    for i in range(1, 10000):
-        tb_log_dir_2 = os.path.join(root_dir, f"tb_{i}")
-        if not os.path.isdir(tb_log_dir_2):
-            os.system(f"mv {tb_log_dir} {tb_log_dir_2}")
-            break
+# try:
+#     best_val_loss = val_checkpoint['best_val_loss']
+#     best_train_loss = val_checkpoint['best_train_loss']
+# except:
+#     best_val_loss = float('inf')
+#     best_train_loss = float('inf')
 
 
-assert not os.path.isdir(tb_log_dir) 
-os.makedirs(tb_log_dir)
+# tb_log_subdir = "tb" 
+# tb_log_dir = os.path.join(root_dir, "tb")
 
-writer = SummaryWriter(log_dir=tb_log_dir)
+# if os.path.isdir(tb_log_dir):
+#     for i in range(1, 10000):
+#         tb_log_dir_2 = os.path.join(root_dir, f"tb_{i}")
+#         if not os.path.isdir(tb_log_dir_2):
+#             os.system(f"mv {tb_log_dir} {tb_log_dir_2}")
+#             break
 
 
-print("len of train dataloader ", len(dataloaders['train']))
-print("len of val dataloader ", len(dataloaders['val']))
+# assert not os.path.isdir(tb_log_dir) 
+# os.makedirs(tb_log_dir)
 
-for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
-  print(f'Epoch {epoch}/{num_epochs - 1}')
-  print('-' * 10)
+# writer = SummaryWriter(log_dir=tb_log_dir)
 
-  for phase in ['train', 'val']:
-      target_max = -10000.
-      target_min = 10000.
 
-      if phase == 'train':
-          model.train()
-      else: # added for validation
-          model.eval() # added for validation
+# print("len of train dataloader ", len(dataloaders['train']))
+# print("len of val dataloader ", len(dataloaders['val']))
 
-      running_loss = 0.0
-      val_loss = 0.0
-      val_l1_loss = 0.0
+# for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
+#   print(f'Epoch {epoch}/{num_epochs - 1}')
+#   print('-' * 10)
 
-      for _, (inputs, labels) in enumerate(dataloaders[phase]):
-          inputs = inputs.float().to(device)
-          labels = labels.float().to(device)
+#   for phase in ['train', 'val']:
+#       target_max = -10000.
+#       target_min = 10000.
 
-          if target_max < labels.max().item():
-              target_max = labels.max().item()
+#       if phase == 'train':
+#           model.train()
+#       else: # added for validation
+#           model.eval() # added for validation
 
-          if target_min > labels.min().item():
-              target_min = labels.min().item()
+#       running_loss = 0.0
+#       val_loss = 0.0
+#       val_l1_loss = 0.0
 
-          optimizer.zero_grad()
+#       for _, (inputs, labels) in enumerate(dataloaders[phase]):
+#           inputs = inputs.float().to(device)
+#           labels = labels.float().to(device)
 
-          with torch.set_grad_enabled(phase == 'train'):
-            #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
-              outputs = model(inputs) # input shape should be torch.rand(2,1,512,32)
-            #   import pdb; pdb.set_trace()
-              loss = criterion(outputs*1., labels*1.)
+#           if target_max < labels.max().item():
+#               target_max = labels.max().item()
 
-              if phase == 'train':
-                  loss.backward()
-                  optimizer.step()
-              else:
-                if flag:
-                    l1_loss = torch.nn.L1Loss()(outputs*20., labels*20.)
-                else:
-                    l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
+#           if target_min > labels.min().item():
+#               target_min = labels.min().item()
+
+#           optimizer.zero_grad()
+
+#           with torch.set_grad_enabled(phase == 'train'):
+#             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
+#               outputs = model(inputs) # input shape should be torch.rand(2,1,512,32)
+#             #   import pdb; pdb.set_trace()
+#               loss = criterion(outputs*1., labels*1.)
+
+#               if phase == 'train':
+#                   loss.backward()
+#                   optimizer.step()
+#               else:
+#                 if flag:
+#                     l1_loss = torch.nn.L1Loss()(outputs*20., labels*20.)
+#                 else:
+#                     l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
 
                         
 
-          if phase == 'train':
-              running_loss += loss.item() * inputs.size(0)
-          else:
-              val_loss += loss.item() * inputs.size(0) # added for validation
-              val_l1_loss += l1_loss.item() * inputs.size(0)
+#           if phase == 'train':
+#               running_loss += loss.item() * inputs.size(0)
+#           else:
+#               val_loss += loss.item() * inputs.size(0) # added for validation
+#               val_l1_loss += l1_loss.item() * inputs.size(0)
 
-      if phase == 'train':
-          epoch_train_loss = running_loss / len(dsets[phase])
-          print(f'{phase} Loss: {epoch_train_loss:.4f}')
-          print(f'{phase} target max: {target_max:.4f}')
-          print(f'{phase} target min: {target_min:.4f}')
+#       if phase == 'train':
+#           epoch_train_loss = running_loss / len(dsets[phase])
+#           print(f'{phase} Loss: {epoch_train_loss:.4f}')
+#           print(f'{phase} target max: {target_max:.4f}')
+#           print(f'{phase} target min: {target_min:.4f}')
 
-          writer.add_scalar('train_loss', epoch_train_loss, epoch)
-
-
-          if epoch_train_loss < best_train_loss:
-              best_train_loss = epoch_train_loss
-              # torch.save({'state_dict':model.state_dict()},root_dir + "/best_train_ckpt.pth")
-              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
-
-      else:
-          epoch_val_loss = val_loss / len(dsets[phase]) # added for validation
-          epoch_val_l1_loss = val_l1_loss / len(dsets[phase]) # added for validation
-
-          writer.add_scalar('val_loss', epoch_val_loss, epoch)
-          writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
-
-          print(f'{phase} Loss: {epoch_val_loss:.4f}')
-          print(f'{phase} L1 Loss: {epoch_val_l1_loss:.4f}')
-          print(f'{phase} target max: {target_max:.4f}')
-          print(f'{phase} target min: {target_min:.4f}')
-          if epoch_val_loss < best_val_loss:
-              best_val_loss = epoch_val_loss
-              # torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
-              torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_val_loss},root_dir + "/best_val_ckpt.pth")
-
-      torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss},root_dir + "/last_ckpt.pth")    
-
-writer.close()
+#           writer.add_scalar('train_loss', epoch_train_loss, epoch)
 
 
-# CUDA_VISIBLE_DEVICES=0,1,2,3 python cnn_regression_binaural.py
+#           if epoch_train_loss < best_train_loss:
+#               best_train_loss = epoch_train_loss
+#               # torch.save({'state_dict':model.state_dict()},root_dir + "/best_train_ckpt.pth")
+#               torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
+
+#       else:
+#           epoch_val_loss = val_loss / len(dsets[phase]) # added for validation
+#           epoch_val_l1_loss = val_l1_loss / len(dsets[phase]) # added for validation
+
+#           writer.add_scalar('val_loss', epoch_val_loss, epoch)
+#           writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
+
+#           print(f'{phase} Loss: {epoch_val_loss:.4f}')
+#           print(f'{phase} L1 Loss: {epoch_val_l1_loss:.4f}')
+#           print(f'{phase} target max: {target_max:.4f}')
+#           print(f'{phase} target min: {target_min:.4f}')
+#           if epoch_val_loss < best_val_loss:
+#               best_val_loss = epoch_val_loss
+#               # torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
+#               torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_val_loss},root_dir + "/best_val_ckpt.pth")
+
+#       torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss},root_dir + "/last_ckpt.pth")    
+
+# writer.close()
+
+
+# # CUDA_VISIBLE_DEVICES=0,1,2,3 python cnn_regression_binaural.py
