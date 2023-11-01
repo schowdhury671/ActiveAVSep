@@ -658,7 +658,7 @@ class PPOTrainer(BaseRLTrainer):
             # print("Ratio: ",(step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()) / rewards[reward_idx])
             geo_rewards[reward_idx] = step_observation["ground_truth_geodesic_distance"][reward_idx, 0].item() - batch["ground_truth_geodesic_distance"][reward_idx, 0].item()
             # print("@!@!@!@!geo_rewards[reward_idx] ", geo_rewards[reward_idx])
-            rewards[reward_idx] = ppo_cfg.geo_reward_wt * geo_rewards[reward_idx] + rewards[reward_idx] 
+            rewards[reward_idx] = ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]    #  + rewards[reward_idx] 
             # rewards[reward_idx] = ppo_cfg.sep_reward_wt * rewards[reward_idx] + ppo_cfg.geo_reward_wt * geo_rewards[reward_idx]
         
         # print("@!@!@!@!@!@!@geo_rewards after ", geo_rewards)
