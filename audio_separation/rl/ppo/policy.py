@@ -9,6 +9,7 @@ from audio_separation.rl.models.visual_cnn import VisualCNN
 from audio_separation.rl.models.audio_cnn import AudioCNN
 from audio_separation.rl.models.separator_cnn import PassiveSepEncCNN, PassiveSepDecCNN
 from audio_separation.rl.models.memory_nets import AudioMem
+from audio_separation.rl.models.location_predictor import AudioCNN as LocationCNN
 
 
 class CriticHead(nn.Module):
@@ -47,19 +48,27 @@ class PolicyNet(Net):
     r"""Network which passes the observations and separated audio outputs through CNNs and concatenates
     them into a single vector before passing that through RNN.
     """
-    def __init__(self, observation_space, hidden_size, extra_rgb=False, extra_depth=False, use_location_in_policy=False):
+    def __init__(self, observation_space, hidden_size, extra_rgb=False, extra_depth=False, use_location_in_policy=False,
+                 use_predictedLocation_in_policy=False, locationPredictor_encoderType="resnet"):
         super().__init__()
 
         self._use_location_in_policy = use_location_in_policy
+        self.use_predictedLocation_in_policy = use_predictedLocation_in_policy
         self._hidden_size = hidden_size
+
+        if use_predictedLocation_in_policy:
+            assert use_location_in_policy
 
         self.visual_encoder = VisualCNN(observation_space, hidden_size, extra_rgb, extra_depth)
         self.bin_encoder = AudioCNN(observation_space, hidden_size)
         self.monoFromMem_encoder = AudioCNN(observation_space, hidden_size, encode_monoFromMem=True,)
 
         if self._use_location_in_policy:
-            self.location_encoder = nn.Sequential(nn.Linear(2, self._hidden_size), nn.ReLU(),
-                                                  nn.Linear(self._hidden_size, self._hidden_size))
+            if use_predictedLocation_in_policy:
+                self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_type, return_feats=True,)
+            else:
+                self.location_encoder = nn.Sequential(nn.Linear(2, self._hidden_size), nn.ReLU(),
+                                                      nn.Linear(self._hidden_size, self._hidden_size))
             rnn_input_size = 4 * self._hidden_size
         else:
             rnn_input_size = 3 * self._hidden_size
@@ -103,7 +112,18 @@ class PolicyNet(Net):
         #x[-1] = x[-2]   # added by Sanjoy
 
         if self._use_location_in_policy:
-            temp_loc_enc = self.location_encoder(observations['ground_truth_deltax_deltay'])
+            if self.use_predictedLocation_in_policy:
+                assert pred_binSepMasks is not None
+                inp_ = observations["mixed_bin_audio_mag"]
+                inp_ = torch.exp(inp_) - 1
+                inp_ = inp_ * pred_binSepMasks
+                self.location_encoder.eval()
+                with torch.no_grad():
+                    temp_loc_enc = self.location_encoder(inp_)
+                    temp_loc_enc = temp_loc_enc.detach()
+                print("policy.py h1")
+            else:
+                temp_loc_enc = self.location_encoder(observations['ground_truth_deltax_deltay'])
             x.append(temp_loc_enc)
 
             # print("################# temp_loc_enc.shape: ", temp_loc_enc.shape)
@@ -347,6 +367,8 @@ class AAViDSSPolicy(Policy):
             extra_rgb=extra_rgb,
             extra_depth=extra_depth,
             use_location_in_policy=ppo_cfg.use_location_in_policy,
+            use_predictedLocation_in_policy=ppo_cfg.use_predictedLocation_in_policy,
+            locationPredictor_encoderType=ppo_cfg.locationPredictor_encoderType,
         )
 
         binSep_enc = PassiveSepEnc()
