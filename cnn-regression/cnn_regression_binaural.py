@@ -308,7 +308,12 @@ class AudioCNN(nn.Module):
 
 class BinauralRIRdataset(Dataset):
 
-    def __init__(self, filename='train_wavs.json', split='train'):
+    def __init__(self,
+                 filename='train_wavs.json',
+                 split='train',
+                 use_mic_noise=False,
+                 mic_noise_level=15,
+                 ):
 
         self.filename = filename
         self.split = split
@@ -317,8 +322,16 @@ class BinauralRIRdataset(Dataset):
         self.list_wavs = self.list_wavs[self.split]
         # self.image_transform = T.Compose([T.Resize((512,32)),T.ToTensor()]) # check transforms  T.RandomCrop(224), # please check transformation size here output should be (512, 32)
 
+        self.split = split
+        self.use_mic_noise = use_mic_noise
+        self.mic_noise_level = mic_noise_level
+
+        if split in ["val"]:
+            if use_mic_noise:
+                self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))
+
     def __len__(self):
-        return len(self.list_wavs)
+        return len(self.list_wavs)  # len(self.list_wavs), 2
 
     def __getitem__(self, idx):
 
@@ -369,6 +382,16 @@ class BinauralRIRdataset(Dataset):
         else:
             binaural_convolved =  np.concatenate((binaural_convolved,np.zeros((binaural_convolved.shape[0], 16000 - binaural_convolved.shape[1]))), axis = 1)
 
+        if self.use_mic_noise:
+            rms_signal = np.power(np.mean(np.power(binaural_convolved, 2, dtype="float32")), 0.5)
+            noise_sigma = rms_signal / np.power(10, (self.mic_noise_level / 20))
+            # noise = np.random.normal(0, noise_sigma, binaural_convolved.shape)
+            if self.split in ["val"]:
+                noise = self.cached_noise_sample[idx] * noise_sigma
+            else:
+                noise = torch.normal(0, 1, size=binaural_convolved.shape) * noise_sigma
+            binaural_convolved += noise
+
         # compute gt bin. magnitude
         fft_windows_l = librosa.stft(np.asfortranarray(binaural_convolved[0]), hop_length=HOP_LENGTH,
                                         n_fft=N_FFT)
@@ -406,10 +429,19 @@ class BinauralRIRdataset(Dataset):
             return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50. 
 
 
+USE_MIC_NOISE = True    # True, False
+MIC_NOISE_LEVEL_IN_DB = 15  # 15, 30, 45, 60
+
 
 dsets = dict()
-dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json', split='train')
-dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json', split='val') # added for validation
+dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json',
+                                    split='train', 
+                                    use_mic_noise=USE_MIC_NOISE,
+                                    mic_noise_level=MIC_NOISE_LEVEL_IN_DB)
+dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json',
+                                  split='val',
+                                  use_mic_noise=USE_MIC_NOISE,
+                                  mic_noise_level=MIC_NOISE_LEVEL_IN_DB,) # added for validation
 
 dataloaders = dict()
 dataloaders['train'] = DataLoader(dsets['train'], batch_size=512, shuffle=True, num_workers=4, pin_memory=True, drop_last=False)
