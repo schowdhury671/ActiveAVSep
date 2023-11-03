@@ -458,7 +458,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "dummy_run"    #"regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
+root_dir = "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 device_ids = [0,1,2,3] # for 4 gpus
 
