@@ -331,7 +331,7 @@ class BinauralRIRdataset(Dataset):
                 self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))
 
     def __len__(self):
-        return len(self.list_wavs)     #, 2   len(self.list_wavs)
+        return 2     #, 2   len(self.list_wavs)
 
     def __getitem__(self, idx):
 
@@ -391,7 +391,9 @@ class BinauralRIRdataset(Dataset):
                 noise = self.cached_noise_sample[idx] * noise_sigma
             else:
                 # print("h2")
-                noise = torch.normal(0, 1, size = (2,1)).numpy() * noise_sigma    # make size = binaural_convolved.shape  OR  (2,1)
+                # noise = torch.normal(0, 1, size = (2,1)).numpy() * noise_sigma    # make size = binaural_convolved.shape  OR  (2,1)
+                noise = np.random.normal(0, 1, (2,1)) * noise_sigma
+                print("@!@!@!h2: ", noise)
             binaural_convolved += noise
 
         # compute gt bin. magnitude
@@ -431,7 +433,7 @@ class BinauralRIRdataset(Dataset):
             return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50. 
 
 
-USE_MIC_NOISE = True    # True, False
+USE_MIC_NOISE = True    # True, 
 MIC_NOISE_LEVEL_IN_DB = 15  # 15, 30, 45, 60
 
 
@@ -456,7 +458,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "dummy_run"         #"regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15"
+root_dir = "dummy_run"    #"regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
 encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 device_ids = [0,1,2,3] # for 4 gpus
 
@@ -538,6 +540,9 @@ for _,epoch in enumerate(tqdm(range(start_epoch,num_epochs))):
       for inputs_n_labels in tqdm(dataloaders[phase]):   # for _, (inputs, labels) in enumerate(dataloaders[phase]):
           inputs = inputs_n_labels[0]
           labels = inputs_n_labels[1]
+
+          inputs = inputs.float().to(device)
+          labels = labels.float().to(device)
 
           if target_max < labels.max().item():
               target_max = labels.max().item()
