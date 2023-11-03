@@ -331,7 +331,7 @@ class BinauralRIRdataset(Dataset):
                 self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))
 
     def __len__(self):
-        return 2     #, 2   len(self.list_wavs)
+        return  len(self.list_wavs)    #, 2   len(self.list_wavs)
 
     def __getitem__(self, idx):
 
@@ -393,7 +393,7 @@ class BinauralRIRdataset(Dataset):
                 # print("h2")
                 # noise = torch.normal(0, 1, size = (2,1)).numpy() * noise_sigma    # make size = binaural_convolved.shape  OR  (2,1)
                 noise = np.random.normal(0, 1, (2,1)) * noise_sigma
-                print("@!@!@!h2: ", noise)
+                # print("@!@!@!h2: ", noise)
             binaural_convolved += noise
 
         # compute gt bin. magnitude
