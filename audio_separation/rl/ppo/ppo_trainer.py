@@ -975,17 +975,17 @@ class PPOTrainer(BaseRLTrainer):
                 if "module." in k:
                     # print("h0: ", k, k[7:])
                     if k[7:] in locationPredictor_stateDict:
-                        # print("h1")
+                        # print("#@#@#@h1")
                         locationPredictor_stateDict[k[7:]].copy_(v)
                         assert torch.all(locationPredictor_stateDict[k[7:]].cpu() == v).item()
                     # else:
-                    #     # print("h2")
+                    #     print("h2")
                 else:
                     if k in locationPredictor_stateDict:
                         # print("h3")
                         locationPredictor_stateDict[k].copy_(v)
                     # else:
-                    #     print("h4")
+                        # print("h4")
             # exit()
 
         if ppo_cfg.use_ddppo:
@@ -1381,8 +1381,8 @@ class PPOTrainer(BaseRLTrainer):
                     
                     if update % self.config.CHECKPOINT_INTERVAL == 0:
                         if not IS_INTEGRATED_EVAL:
-                            # self.save_checkpoint(f"ckpt.{count_checkpoints}.pth")
-                            self.save_checkpoint(f"latest_ckpt.pth")
+                            self.save_checkpoint(f"ckpt.{count_checkpoints}.pth")
+                            # self.save_checkpoint(f"latest_ckpt.pth")
                             count_checkpoints += 1
                         
                         else:

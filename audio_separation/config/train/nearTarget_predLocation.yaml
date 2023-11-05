@@ -6,7 +6,7 @@ EXTRA_DEPTH: True
 #### 8 GPU
 NUM_UPDATES: 67142
 LOG_INTERVAL: 50
-CHECKPOINT_INTERVAL: 5 # 90
+CHECKPOINT_INTERVAL: 1342   # 90, 671 was 5, 1342
 
 
 RL:
@@ -18,7 +18,8 @@ RL:
 
     use_predictedLocation_in_policy: True
     locationPredictor_encoderType: "resnet"
-    locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor1/best_val_ckpt_b.pth"
+    # locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor1/best_val_ckpt_b.pth"
+    locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1/best_val_ckpt.pth"
 
     sep_reward_wt: 1.0 
     geo_reward_wt: 1.0 # assign reward weightage here ## CHANGE DONE HERE

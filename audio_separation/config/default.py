@@ -75,6 +75,7 @@ _C.RL.PPO.pretrained_passive_separators_ckpt = ""
 _C.RL.PPO.use_location_in_policy = False
 _C.RL.PPO.locationPredictor_encoderType = None
 _C.RL.PPO.use_predictedLocation_in_policy = False
+_C.RL.PPO.use_predictedLocationWoFeats_in_policy = False
 _C.RL.PPO.locationPredictor_ckpt = None
 _C.RL.PPO.geo_reward_wt = 0.01 ## CHANGE DONE HERE
 _C.RL.PPO.train_passive_separators = False

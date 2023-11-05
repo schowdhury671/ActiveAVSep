@@ -32,8 +32,8 @@ class AudioCNN(nn.Module):
         self._cnn_layers_stride = [(4, 4), (2, 2), (1, 1)]
 
 
-        print("*******observation_space.spaces.shape[0] is ", observation_space.spaces["mixed_bin_audio_mag"].shape[0])
-        print("*******observation_space.spaces.shape[1] is ", observation_space.spaces["mixed_bin_audio_mag"].shape[1])
+        # print("*******observation_space.spaces.shape[0] is ", observation_space.spaces["mixed_bin_audio_mag"].shape[0])
+        # print("*******observation_space.spaces.shape[1] is ", observation_space.spaces["mixed_bin_audio_mag"].shape[1])
         
         cnn_dims = np.array(
             [observation_space.spaces["mixed_bin_audio_mag"].shape[0] // 16,

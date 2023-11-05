@@ -49,15 +49,19 @@ class PolicyNet(Net):
     them into a single vector before passing that through RNN.
     """
     def __init__(self, observation_space, hidden_size, extra_rgb=False, extra_depth=False, use_location_in_policy=False,
-                 use_predictedLocation_in_policy=False, locationPredictor_encoderType="resnet"):
+                 use_predictedLocation_in_policy=False, use_predictedLocationWoFeats_in_policy=False, locationPredictor_encoderType="resnet"):
         super().__init__()
 
         self._use_location_in_policy = use_location_in_policy
         self.use_predictedLocation_in_policy = use_predictedLocation_in_policy
+        self.use_predictedLocationWoFeats_in_policy = use_predictedLocationWoFeats_in_policy
         self._hidden_size = hidden_size
 
         if use_predictedLocation_in_policy:
             assert use_location_in_policy
+
+        if use_predictedLocationWoFeats_in_policy:
+            assert use_predictedLocation_in_policy
 
         self.visual_encoder = VisualCNN(observation_space, hidden_size, extra_rgb, extra_depth)
         self.bin_encoder = AudioCNN(observation_space, hidden_size)
@@ -65,7 +69,12 @@ class PolicyNet(Net):
 
         if self._use_location_in_policy:
             if use_predictedLocation_in_policy:
-                self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_encoderType, return_feats=True,)
+                if use_predictedLocationWoFeats_in_policy:
+                    self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_encoderType, return_feats=False,)
+                    self.location_encoder_linear = nn.Sequential(nn.Linear(2, self._hidden_size), nn.ReLU(),
+                                                      nn.Linear(self._hidden_size, self._hidden_size))
+                else:
+                    self.location_encoder = LocationCNN(output_size=2,  encoder_type=locationPredictor_encoderType, return_feats=True,)
             else:
                 self.location_encoder = nn.Sequential(nn.Linear(2, self._hidden_size), nn.ReLU(),
                                                       nn.Linear(self._hidden_size, self._hidden_size))
@@ -124,7 +133,10 @@ class PolicyNet(Net):
                 with torch.no_grad():
                     temp_loc_enc = self.location_encoder(inp_)
                     temp_loc_enc = temp_loc_enc.detach()
-                # print("policy.py h1")
+                
+                if self.use_predictedLocationWoFeats_in_policy:
+                    temp_loc_enc = self.location_encoder_linear(temp_loc_enc)
+                    # print("#@#@#@policy.py h1")
             else:
                 temp_loc_enc = self.location_encoder(observations['ground_truth_deltax_deltay'])
             x.append(temp_loc_enc)
@@ -375,6 +387,7 @@ class AAViDSSPolicy(Policy):
             use_location_in_policy=ppo_cfg.use_location_in_policy,
             use_predictedLocation_in_policy=ppo_cfg.use_predictedLocation_in_policy,
             locationPredictor_encoderType=ppo_cfg.locationPredictor_encoderType,
+            use_predictedLocationWoFeats_in_policy=ppo_cfg.use_predictedLocationWoFeats_in_policy, 
         )
 
         binSep_enc = PassiveSepEnc()
