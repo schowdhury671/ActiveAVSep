@@ -243,8 +243,8 @@ class PassiveDataset(Dataset):
                 
                   for idx, source_locn in enumerate(all_source_locns):
                       binaural_rir_file = os.path.join(scene, str(receiver_azimuth), f"{receiver_locn}_{source_locn}.wav")
-                      delta_x = node_to_point_dict[receiver_locn][0] - node_to_point_dict[receiver_locn][0]
-                      delta_y = node_to_point_dict[source_locn][2] - node_to_point_dict[source_locn][2]
+                      delta_x = node_to_point_dict[source_locn][0] - node_to_point_dict[receiver_locn][0]
+                      delta_y = node_to_point_dict[source_locn][2] - node_to_point_dict[receiver_locn][2]
 
                       for az in [0, 90, 180, 270]:
                           if az == 0:
@@ -295,7 +295,7 @@ class PassiveDataset(Dataset):
                 print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
 
     def __len__(self):
-        return len(self.complete_datapoint_files)
+        return 2     #len(self.complete_datapoint_files)
 
     def __getitem__(self, item):
         if not self.use_cache:
@@ -304,8 +304,8 @@ class PassiveDataset(Dataset):
             rirs_audio = self.complete_datapoint_files[item]
             # keep the same src locns, and agent locn and pose but resample the source audio
             rirs_audio_new = []
-            for src_idx, (binaural_rir_file, audio_file) in enumerate(rirs_audio):
-                rirs_audio_new.append((binaural_rir_file, audio_files[src_idx]))
+            for src_idx, (binaural_rir_file, audio_file, delta_x_az, delta_y_az) in enumerate(rirs_audio):
+                rirs_audio_new.append((binaural_rir_file, audio_files[src_idx], delta_x_az, delta_y_az))
             rirs_audio = rirs_audio_new
             
             # print('rirs_audio', len(rirs_audio))
@@ -317,13 +317,13 @@ class PassiveDataset(Dataset):
             gt_bin_mag = torch.from_numpy(np.concatenate(gt_bin_mag, axis=2))
             gt_mono_mag = torch.from_numpy(np.concatenate(gt_mono_mag, axis=2))
             target_class = torch.from_numpy(target_class)
-            delta_x_az, delta_y_az = torch.from_numpy(np.concatenate(delta_x_az, axis=1)), torch.from_numpy(np.concatenate(delta_y_az, axis=1))
+            delta_x_az, delta_y_az = torch.tensor(delta_x_az,[:1]), torch.tensor(delta_y_az,[:1])
         else:
             mixed_audio = torch.from_numpy(self.complete_datapoints[item][0])
             gt_bin_mag = torch.from_numpy(np.concatenate(self.complete_datapoints[item][1], axis=2))
             gt_mono_mag = torch.from_numpy(np.concatenate(self.complete_datapoints[item][2], axis=2))
             target_class = torch.from_numpy(self.complete_datapoints[item][3])
-            delta_x_az, delta_y_az = torch.from_numpy(np.concatenate(self.complete_datapoints[item][4], axis=1)), torch.from_numpy(np.concatenate(self.complete_datapoints[item][5], axis=1))
+            delta_x_az, delta_y_az = torch.tensor(self.complete_datapoints[item][4][:1]), torch.tensor(self.complete_datapoints[item][5][:1])
 
         return mixed_audio, gt_bin_mag, gt_mono_mag, target_class, delta_x_az, delta_y_az
 

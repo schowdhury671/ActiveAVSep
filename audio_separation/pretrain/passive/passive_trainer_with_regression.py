@@ -91,7 +91,7 @@ SCENE_SPLITS = {
 EPS = 1e-7
 
 
-flag = True  #False
+flag = False
 
 
 class Flatten(nn.Module):
@@ -405,15 +405,18 @@ class PassiveTrainer(BaseRLTrainer):
         dataloaders, dataset_sizes = self.get_dataloaders()
         print('Dloader init')
 
-        passive_ckpt_path = '' # PUT THE PASSIVE CKPT PATH HERE
+        passive_ckpt_path = "/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/runs/passive_pretrain_ours_old/passive_pretrain/new/data/best_ckpt_nonoverlapping_val.pth"   # PUT THE PASSIVE CKPT PATH HERE
         try:
-            self.actor_critic.load_state_dict(torch.load(passive_ckpt_path))
+            self.agent.load_state_dict(torch.load(passive_ckpt_path, map_location="cpu")["state_dict"])
+            self.actor_critic = self.agent.actor_critic
             print('Actor critic ckpt loaded')
         except:
             raise NotImplementedError()
 
         best_mono_loss = float('inf')
         best_nonoverlapping_mono_loss = float('inf')
+        best_train_loss = float('inf')
+        best_val_loss = float('inf')
         print('start tboard')
         with TensorboardWriter(
             self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
@@ -442,7 +445,7 @@ class PassiveTrainer(BaseRLTrainer):
                         target_class = data[3].to(self.device)
                         delta_x = data[4].to(self.device)
                         delta_y = data[5].to(self.device)
-                        labels = torch.cat((delta_x,delta_y), axis=-1)
+                        labels = torch.stack((delta_x,delta_y), axis=-1)
                         bs = target_class.size(0)
                         optimizer.zero_grad()
 
@@ -450,13 +453,14 @@ class PassiveTrainer(BaseRLTrainer):
 
                         with torch.no_grad():
                             pred_binSepMasks = self.actor_critic.get_binSepMasks(obs_batch)
-                            pred_mono =\
-                                self.actor_critic.convert_bin2mono(pred_binSepMasks.detach(),
-                                                                       mixed_audio=mixed_audio)
+                            pred_binSep = pred_binSepMasks * (torch.exp(mixed_audio) - 1)
+                            # pred_mono =\
+                            #     self.actor_critic.convert_bin2mono(pred_binSepMasks.detach(),
+                            #                                            mixed_audio=mixed_audio)
 
                         with torch.set_grad_enabled(split == 'train'):
                             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
-                            outputs = self.model(pred_mono) # input shape should be torch.rand(2,1,512,32)
+                            outputs = self.model(pred_binSep) # input shape should be torch.rand(2,1,512,32)
                             #   import pdb; pdb.set_trace()
                             loss = criterion(outputs*1., labels*1.)
 
@@ -470,15 +474,15 @@ class PassiveTrainer(BaseRLTrainer):
                                     l1_loss = torch.nn.L1Loss()(outputs*1., labels*1.)
 
                         if split == 'train':
-                            running_loss += loss.item() * pred_mono.size(0)
+                            running_loss += loss.item() * bs
                         else:
-                            val_loss += loss.item() * pred_mono.size(0) # added for validation
-                            val_l1_loss += l1_loss.item() * pred_mono.size(0)
+                            val_loss += loss.item() * bs # added for validation
+                            val_l1_loss += l1_loss.item() * bs
 
                     phase = split
                     dsets = dataset_sizes
                     if phase == 'train':
-                        epoch_train_loss = running_loss / len(dsets[phase])
+                        epoch_train_loss = running_loss / len(dataloaders[phase])
                         print(f'{phase} Loss: {epoch_train_loss:.4f}')
 
                         writer.add_scalar('train_loss', epoch_train_loss, epoch)
@@ -490,8 +494,8 @@ class PassiveTrainer(BaseRLTrainer):
                             torch.save({'state_dict':self.model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
 
                     else:
-                        epoch_val_loss = val_loss / len(dsets[phase]) # added for validation
-                        epoch_val_l1_loss = val_l1_loss / len(dsets[phase]) # added for validation
+                        epoch_val_loss = val_loss /  len(dataloaders[phase]) # added for validation
+                        epoch_val_l1_loss = val_l1_loss / len(dataloaders[phase]) # added for validation
 
                         writer.add_scalar('val_loss', epoch_val_loss, epoch)
                         writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
