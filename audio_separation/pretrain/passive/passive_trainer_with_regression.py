@@ -17,7 +17,7 @@ from audio_separation.common.baseline_registry import baseline_registry
 from audio_separation.common.tensorboard_utils import TensorboardWriter
 from audio_separation.pretrain.passive.policy import PassiveSepPolicy
 from audio_separation.pretrain.passive.passive import Passive
-from audio_separation.pretrain.datasets.dataset import PassiveDataset
+from audio_separation.pretrain.datasets.dataset_with_regression import PassiveDataset
 from habitat_audio.utils import load_points_data
 
 
@@ -237,8 +237,8 @@ class AudioCNN(nn.Module):
             return self.cnn(cnn_input)
 
 
-@baseline_registry.register_trainer(name="passive")
-class PassiveTrainer(BaseRLTrainer):
+@baseline_registry.register_trainer(name="passive_loc")
+class PassiveTrainerWithRegression(BaseRLTrainer):
     r"""Trainer class for pretraining passive separators in a supervised fashion
     """
 
@@ -387,15 +387,27 @@ class PassiveTrainer(BaseRLTrainer):
 
         root_dir = "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
         encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-        device_ids = [0,1,2,3] # for 4 gpus
+        device_ids = [0]   #[0,1,2,3] # for 4 gpus
 
         os.makedirs(root_dir, exist_ok = True)
         self.model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 
-        self.model = nn.DataParallel(self.model, device_ids = device_ids)
+        self.model = nn.DataParallel(self.model, device_ids = device_ids) 
 
         criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()    
         optimizer = optim.Adam(self.model.parameters(), lr=0.0001, eps=1e-8)
+
+        try:
+            val_checkpoint = torch.load(root_dir + '/last_ckpt.pth')
+            self.model.load_state_dict(val_checkpoint['state_dict'])
+            optimizer.load_state_dict(val_checkpoint['optimizer'])
+            start_epoch = val_checkpoint['epoch'] + 1
+            print("resuming from checkpoint: ", root_dir)
+        except:
+            start_epoch = 0
+            print("Starting new training with foldername: ", root_dir)
+            print("")
+        self.model = self.model.to(device)
 
         # optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.actor_critic.parameters()),
         #                              lr=passive_cfg.lr, eps=passive_cfg.eps)
@@ -405,7 +417,7 @@ class PassiveTrainer(BaseRLTrainer):
         dataloaders, dataset_sizes = self.get_dataloaders()
         print('Dloader init')
 
-        passive_ckpt_path = "/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/runs/passive_pretrain_ours_old/passive_pretrain/new/data/best_ckpt_nonoverlapping_val.pth"   # PUT THE PASSIVE CKPT PATH HERE
+        passive_ckpt_path = "/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/runs/passive_pretrain/new/data/best_ckpt_nonoverlapping_val.pth"   # PUT THE PASSIVE CKPT PATH HERE
         try:
             self.agent.load_state_dict(torch.load(passive_ckpt_path, map_location="cpu")["state_dict"])
             self.actor_critic = self.agent.actor_critic
@@ -422,7 +434,7 @@ class PassiveTrainer(BaseRLTrainer):
             self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
         ) as writer:
             print('Inside tb writer')
-            for epoch in range(self.config.NUM_EPOCHS):
+            for epoch in range(start_epoch, self.config.NUM_EPOCHS):    #for epoch in range(self.config.NUM_EPOCHS):
                 logging.info('-' * 10)
                 # import pdb; pdb.set_trace()
                 logging.info('Epoch {}/{}'.format(epoch, self.config.NUM_EPOCHS - 1))
@@ -460,7 +472,7 @@ class PassiveTrainer(BaseRLTrainer):
 
                         with torch.set_grad_enabled(split == 'train'):
                             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
-                            outputs = self.model(pred_binSep) # input shape should be torch.rand(2,1,512,32)
+                            outputs = self.model(pred_binSep.permute(0,3,1,2)) # input shape should be torch.rand(2,1,512,32)
                             #   import pdb; pdb.set_trace()
                             loss = criterion(outputs*1., labels*1.)
 
