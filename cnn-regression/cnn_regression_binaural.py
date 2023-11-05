@@ -328,7 +328,7 @@ class BinauralRIRdataset(Dataset):
 
         if split in ["val"]:
             if use_mic_noise:
-                self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))
+                self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))  # self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 1))
 
     def __len__(self):
         return  len(self.list_wavs)    #, 2   len(self.list_wavs)
@@ -471,7 +471,7 @@ criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
 try:
-    val_checkpoint = torch.load(root_dir + '/best_val_ckpt.pth')
+    val_checkpoint = torch.load(root_dir + '/last_ckpt.pth')
     model.load_state_dict(val_checkpoint['state_dict'])
     optimizer.load_state_dict(val_checkpoint['optimizer'])
     start_epoch = val_checkpoint['epoch'] + 1
