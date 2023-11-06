@@ -306,7 +306,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
         audio_cfg = sim_cfg.AUDIO
 
         scene_splits = {"train": SCENE_SPLITS[sim_cfg.SCENE_DATASET]["train"],
-                        "val": SCENE_SPLITS[sim_cfg.SCENE_DATASET]["val"],
+                        # "val": SCENE_SPLITS[sim_cfg.SCENE_DATASET]["val"],
                         "nonoverlapping_val": SCENE_SPLITS[sim_cfg.SCENE_DATASET]["val"]}
         datasets = dict()
         dataloaders = dict()
@@ -385,21 +385,21 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        root_dir = "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
+        root_dir = 'data/active_datasets/v1_old/train_731243episodes/regression_resnet_5nov_lr_1e-4_l1_factor1_pretrainedSep'
         encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-        device_ids = [0]   #[0,1,2,3] # for 4 gpus
+        device_ids = [0,1,2,3] # for 4 gpus
 
         os.makedirs(root_dir, exist_ok = True)
-        self.model = AudioCNN(output_size=2,  encoder_type=encoder_type)
+        model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 
-        self.model = nn.DataParallel(self.model, device_ids = device_ids) 
+        model = nn.DataParallel(model, device_ids = device_ids) 
 
         criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()    
-        optimizer = optim.Adam(self.model.parameters(), lr=0.0001, eps=1e-8)
+        optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
 
         try:
             val_checkpoint = torch.load(root_dir + '/last_ckpt.pth')
-            self.model.load_state_dict(val_checkpoint['state_dict'])
+            model.load_state_dict(val_checkpoint['state_dict'])
             optimizer.load_state_dict(val_checkpoint['optimizer'])
             start_epoch = val_checkpoint['epoch'] + 1
             print("resuming from checkpoint: ", root_dir)
@@ -407,7 +407,16 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
             start_epoch = 0
             print("Starting new training with foldername: ", root_dir)
             print("")
-        self.model = self.model.to(device)
+        model = model.to(device)
+
+        tb_log_subdir = "tb" 
+        tb_log_dir = os.path.join(root_dir, "tb")
+        if os.path.isdir(tb_log_dir):
+            for i in range(1, 10000):
+                tb_log_dir_2 = os.path.join(root_dir, f"tb_{i}")
+                if not os.path.isdir(tb_log_dir_2):
+                    os.system(f"mv {tb_log_dir} {tb_log_dir_2}")
+                    break
 
         # optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.actor_critic.parameters()),
         #                              lr=passive_cfg.lr, eps=passive_cfg.eps)
@@ -431,7 +440,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
         best_val_loss = float('inf')
         print('start tboard')
         with TensorboardWriter(
-            self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
+            tb_log_dir, flush_secs=self.flush_secs
         ) as writer:
             print('Inside tb writer')
             for epoch in range(start_epoch, self.config.NUM_EPOCHS):    #for epoch in range(self.config.NUM_EPOCHS):
@@ -441,10 +450,10 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
                 for split in dataloaders.keys():
                     if split == "train":
                         self.actor_critic.eval()
-                        self.model.train()
+                        model.train()
                     else:
                         self.actor_critic.eval()
-                        self.model.eval()
+                        model.eval()
 
                     running_loss = 0.0
                     val_loss = 0.0
@@ -465,18 +474,19 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
                         with torch.no_grad():
                             pred_binSepMasks = self.actor_critic.get_binSepMasks(obs_batch)
-                            pred_binSep = pred_binSepMasks * (torch.exp(mixed_audio) - 1)
+                            pred_binSep = pred_binSepMasks * (torch.exp(mixed_audio) - 1).detach()
                             # pred_mono =\
                             #     self.actor_critic.convert_bin2mono(pred_binSepMasks.detach(),
                             #                                            mixed_audio=mixed_audio)
 
                         with torch.set_grad_enabled(split == 'train'):
                             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
-                            outputs = self.model(pred_binSep.permute(0,3,1,2)) # input shape should be torch.rand(2,1,512,32)
+                            outputs = model(pred_binSep.permute(0,3,1,2)) # input shape should be torch.rand(2,1,512,32)
                             #   import pdb; pdb.set_trace()
                             loss = criterion(outputs*1., labels*1.)
 
                             if split == 'train':
+                                # print("@!@!@!INSIDE TRAIN")
                                 loss.backward()
                                 optimizer.step()
                             else:
@@ -494,7 +504,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
                     phase = split
                     dsets = dataset_sizes
                     if phase == 'train':
-                        epoch_train_loss = running_loss / len(dataloaders[phase])
+                        epoch_train_loss = running_loss / dataset_sizes[phase]
                         print(f'{phase} Loss: {epoch_train_loss:.4f}')
 
                         writer.add_scalar('train_loss', epoch_train_loss, epoch)
@@ -503,11 +513,11 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
                         if epoch_train_loss < best_train_loss:
                             best_train_loss = epoch_train_loss
                             # torch.save({'state_dict':model.state_dict()},root_dir + "/best_train_ckpt.pth")
-                            torch.save({'state_dict':self.model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
+                            torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_train_loss},root_dir + "/best_train_ckpt.pth")
 
                     else:
-                        epoch_val_loss = val_loss /  len(dataloaders[phase]) # added for validation
-                        epoch_val_l1_loss = val_l1_loss / len(dataloaders[phase]) # added for validation
+                        epoch_val_loss = val_loss /  dataset_sizes[phase] # added for validation
+                        epoch_val_l1_loss = val_l1_loss / dataset_sizes[phase] # added for validation
 
                         writer.add_scalar('val_loss', epoch_val_loss, epoch)
                         writer.add_scalar('val_L1_loss', epoch_val_l1_loss, epoch)
@@ -518,9 +528,9 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
                         if epoch_val_loss < best_val_loss:
                             best_val_loss = epoch_val_loss
                             # torch.save({'state_dict':model.state_dict()},root_dir + "/best_val_ckpt.pth")
-                            torch.save({'state_dict':self.model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_val_loss},root_dir + "/best_val_ckpt.pth")
+                            torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, "best_loss": best_val_loss},root_dir + "/best_val_ckpt.pth")
 
-                    torch.save({'state_dict':self.model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss},root_dir + "/last_ckpt.pth")
+                    torch.save({'state_dict':model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch': epoch, 'best_val_loss': best_val_loss, 'best_train_loss': best_train_loss},root_dir + "/last_ckpt.pth")
 
     def optimize_supervised_loss(self, optimizer, mixed_audio, pred_binSepMasks, gt_bin_mag, pred_mono, gt_mono_mag,
                                  split='train',):
