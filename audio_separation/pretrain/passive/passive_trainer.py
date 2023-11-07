@@ -55,7 +55,7 @@ SCENE_SPLITS = {
 EPS = 1e-7
 
 
-@baseline_registry.register_trainer(name="passive_loc")
+@baseline_registry.register_trainer(name="passive")
 class PassiveTrainer(BaseRLTrainer):
     r"""Trainer class for pretraining passive separators in a supervised fashion
     """

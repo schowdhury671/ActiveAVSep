@@ -387,7 +387,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
         root_dir = 'data/active_datasets/v1_old/train_731243episodes/regression_resnet_5nov_lr_1e-4_l1_factor1_pretrainedSep'
         encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-        device_ids = [0,1,2,3] # for 4 gpus
+        device_ids = list(range(torch.cuda.device_count()))     #[0,1,2,3] # for 4 gpus
 
         os.makedirs(root_dir, exist_ok = True)
         model = AudioCNN(output_size=2,  encoder_type=encoder_type)
@@ -408,6 +408,11 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
             print("Starting new training with foldername: ", root_dir)
             print("")
         model = model.to(device)
+
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
 
         tb_log_subdir = "tb" 
         tb_log_dir = os.path.join(root_dir, "tb")

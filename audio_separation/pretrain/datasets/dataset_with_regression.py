@@ -133,7 +133,7 @@ class PassiveDataset(Dataset):
         self.audio_cfg = sim_cfg.AUDIO
         self.passive_dataset_version = self.audio_cfg.PASSIVE_DATASET_VERSION
         self.binaural_rir_dir = self.audio_cfg.RIR_DIR
-        self.use_cache = False if split.split("_")[0] == "train" else True
+        self.use_cache = False if (split.split("_")[0] == "train") else True
         self.rir_sampling_rate = self.audio_cfg.RIR_SAMPLING_RATE
         self.num_sources = 2
 
@@ -198,8 +198,10 @@ class PassiveDataset(Dataset):
         self.target_classes = list()
         tqdm_over = scene_graphs
         for scene in tqdm(tqdm_over):   
-          
-          parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
+        #   print("@!@!@!@")
+        #   print(type(scene), scene)
+
+          parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene  # + scene['episodes'][0]['scene_id'].split("/")[0]
           _, s_graph = load_points_data(parent_folder, 'graph.pkl', scene_dataset="mp3d")
 
           node_to_point_dict = dict()
@@ -282,7 +284,7 @@ class PassiveDataset(Dataset):
         if self.use_cache:
             self.complete_datapoints = [None] * len(self.complete_datapoint_files)
             
-            print("****size of complete datapoints ", len(self.complete_datapoints))   # 40947
+            # print("****size of complete datapoints ", len(self.complete_datapoints))   # 40947
             
             for item in tqdm(range(len(self.complete_datapoints))):
                 rirs_audio = self.complete_datapoint_files[item]
@@ -292,10 +294,10 @@ class PassiveDataset(Dataset):
                     self.compute_audiospects(rirs_audio, target_class=self.target_classes[item])
                     
                 self.complete_datapoints[item] = (mixed_audio, gt_bin_mag, gt_mono_mag, target_class, delta_x_az, delta_y_az)
-                print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
+                # print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
 
     def __len__(self):
-        return 2     #len(self.complete_datapoint_files)
+        return 2     #len(self.complete_datapoint_files)   #2
 
     def __getitem__(self, item):
         if not self.use_cache:
@@ -313,11 +315,11 @@ class PassiveDataset(Dataset):
             mixed_audio,  gt_bin_mag, gt_mono_mag, target_class,  delta_x_az, delta_y_az =\
                 self.compute_audiospects(rirs_audio, target_class=target_class)
 
-            mixed_audio = torch.from_numpy(mixed_audio)
+            mixed_audio = torch.from_numpy(mixed_audio) 
             gt_bin_mag = torch.from_numpy(np.concatenate(gt_bin_mag, axis=2))
             gt_mono_mag = torch.from_numpy(np.concatenate(gt_mono_mag, axis=2))
             target_class = torch.from_numpy(target_class)
-            delta_x_az, delta_y_az = torch.tensor(delta_x_az,[:1]), torch.tensor(delta_y_az,[:1])
+            delta_x_az, delta_y_az = torch.tensor(delta_x_az[:1]), torch.tensor(delta_y_az[:1])
         else:
             mixed_audio = torch.from_numpy(self.complete_datapoints[item][0])
             gt_bin_mag = torch.from_numpy(np.concatenate(self.complete_datapoints[item][1], axis=2))
@@ -357,7 +359,7 @@ class PassiveDataset(Dataset):
                 audio_data = resample(audio_data, self.rir_sampling_rate)
             self.file2audio_dict[audio_file] = audio_data
             
-        print("***file2audio len is ", len(self.file2audio_dict))
+        # print("***file2audio len is ", len(self.file2audio_dict))
 
     def compute_audiospects(self, rirs_audio, target_class):
         gt_mono_mag = []
