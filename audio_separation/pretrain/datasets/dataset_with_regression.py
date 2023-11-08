@@ -297,7 +297,7 @@ class PassiveDataset(Dataset):
                 # print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
 
     def __len__(self):
-        return 2     #len(self.complete_datapoint_files)   #2
+        return len(self.complete_datapoint_files)   #2
 
     def __getitem__(self, item):
         if not self.use_cache:
@@ -372,7 +372,10 @@ class PassiveDataset(Dataset):
             delta_x_az.append(rir_audio[2])
             delta_y_az.append(rir_audio[3])
             try:
-                binaural_rir_file = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/' + binaural_rir_file
+                # print("@!@!@!@!@!HERE")
+                # print("@!@!@binaural_rir_file ", binaural_rir_file)
+                assert os.path.isfile('/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/' + binaural_rir_file)
+                binaural_rir_file = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/' + binaural_rir_file  # /fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/
                 if os.path.exists(binaural_rir_file):
                   sr, binaural_rir = wavfile.read(binaural_rir_file)
                   # print(sr, binaural_rir.shape)

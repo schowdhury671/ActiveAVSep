@@ -28,7 +28,7 @@ import torch.nn as nn
 import os
 import copy
 import numpy as np
-import pandas as pd
+# import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 import json
@@ -385,7 +385,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        root_dir = 'data/active_datasets/v1_old/train_731243episodes/regression_resnet_5nov_lr_1e-4_l1_factor1_pretrainedSep'
+        root_dir = 'data/active_datasets/v1_old/train_731243episodes/regression_resnet_7nov_lr_1e-4_l1_factor1_pretrainedSep'
         encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
         device_ids = list(range(torch.cuda.device_count()))     #[0,1,2,3] # for 4 gpus
 
@@ -486,6 +486,11 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
                         with torch.set_grad_enabled(split == 'train'):
                             #   inputs = (inputs - torch.min(inputs)) / (torch.max(inputs) - torch.min(inputs))
+                            # print("#@#@#@ pred_binSep.permute(0,3,1,2).shape: ", pred_binSep.permute(0,3,1,2).shape)
+                            # print("@!@!@!@!pred_binSep.permute(0,3,1,2) ", pred_binSep.permute(0,3,1,2))
+                            # print(abcd)
+
+
                             outputs = model(pred_binSep.permute(0,3,1,2)) # input shape should be torch.rand(2,1,512,32)
                             #   import pdb; pdb.set_trace()
                             loss = criterion(outputs*1., labels*1.)

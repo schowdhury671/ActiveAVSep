@@ -131,6 +131,10 @@ class PolicyNet(Net):
                 inp_ = inp_.permute((0, 3, 1, 2))
                 self.location_encoder.eval()
                 with torch.no_grad():
+                    # print("@!@!!@!inp_.shape ", inp_.shape)
+                    # print("@!@!@!@inp_ ", inp_)
+                    # print(abcd)
+
                     temp_loc_enc = self.location_encoder(inp_)
                     temp_loc_enc = temp_loc_enc.detach()
                 
