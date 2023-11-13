@@ -71,6 +71,9 @@ _C.RL.DISTANCE_REWARD_SCALE = 1.0
 # PROXIMAL POLICY OPTIMIZATION (PPO)
 # -----------------------------------------------------------------------------
 _C.RL.PPO = CN()
+_C.RL.PPO.use_negDist_reward = False
+_C.RL.PPO.use_nov_reward = False
+_C.RL.PPO.ablate_vision = False
 _C.RL.PPO.pretrained_passive_separators_ckpt = ""
 _C.RL.PPO.use_location_in_policy = False
 _C.RL.PPO.locationPredictor_encoderType = None
@@ -131,6 +134,10 @@ _C.Pretrain.Passive.num_epochs = 1000
 # -----------------------------------------------------------------------------
 _TC = habitat.get_config()
 _TC.defrost()
+
+_TC.TASK.NOVELTY_REWARD = CN()
+_TC.TASK.NOVELTY_REWARD.TYPE = "NoveltyReward"
+_TC.TASK.NOVELTY_REWARD.GRID_SIZE = 0.5 
 # -----------------------------------------------------------------------------
 # MIXED BINAURAL AUDIO MAGNITUDE SENSOR
 # -----------------------------------------------------------------------------

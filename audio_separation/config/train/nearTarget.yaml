@@ -6,7 +6,7 @@ EXTRA_DEPTH: True
 #### 8 GPU
 NUM_UPDATES: 67142
 LOG_INTERVAL: 50
-CHECKPOINT_INTERVAL: 5 # 90
+CHECKPOINT_INTERVAL: 1342 # 90
 
 
 RL:
@@ -16,7 +16,8 @@ RL:
 
     use_location_in_policy: True
 
-    geo_reward_wt: 1.0 # assign reward weightage here ## CHANGE DONE HERE
+    sep_reward_wt: 1.0
+    geo_reward_wt: 0.0 # assign reward weightage here ## CHANGE DONE HERE
 
     hidden_size: 512
 
