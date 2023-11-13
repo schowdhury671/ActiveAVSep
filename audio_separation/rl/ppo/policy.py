@@ -49,7 +49,7 @@ class PolicyNet(Net):
     them into a single vector before passing that through RNN.
     """
     def __init__(self, observation_space, hidden_size, extra_rgb=False, extra_depth=False, use_location_in_policy=False,
-                 use_predictedLocation_in_policy=False, use_predictedLocationWoFeats_in_policy=False, locationPredictor_encoderType="resnet"):
+                 use_predictedLocation_in_policy=False, use_predictedLocationWoFeats_in_policy=False, locationPredictor_encoderType="resnet", ablate_vision=False):
         super().__init__()
 
         self._use_location_in_policy = use_location_in_policy
@@ -63,7 +63,9 @@ class PolicyNet(Net):
         if use_predictedLocationWoFeats_in_policy:
             assert use_predictedLocation_in_policy
 
-        self.visual_encoder = VisualCNN(observation_space, hidden_size, extra_rgb, extra_depth)
+        self.ablate_vision = ablate_vision
+        if not ablate_vision:
+            self.visual_encoder = VisualCNN(observation_space, hidden_size, extra_rgb, extra_depth)
         self.bin_encoder = AudioCNN(observation_space, hidden_size)
         self.monoFromMem_encoder = AudioCNN(observation_space, hidden_size, encode_monoFromMem=True,)
 
@@ -81,6 +83,10 @@ class PolicyNet(Net):
             rnn_input_size = 4 * self._hidden_size
         else:
             rnn_input_size = 3 * self._hidden_size
+
+        if ablate_vision:
+            rnn_input_size -= self._hidden_size
+
         self.state_encoder = RNNStateEncoder(rnn_input_size, self._hidden_size)
 
     @property
@@ -105,9 +111,13 @@ class PolicyNet(Net):
         # print("@@@@@@@@@@@@@observations keys ", observations.keys())
         # print("@@@@@@@@@@@@@observations rgb shape ", observations["rgb"].shape)
 
-        temp_vis_enc = self.visual_encoder(observations)
-        x.append(temp_vis_enc)
-        # print("@@@@@@@@@@@@@vis enc shape ", temp_vis_enc.shape)
+        temp_vis_enc = None
+        if not self.ablate_vision:
+            # raise ValueError
+            temp_vis_enc = self.visual_encoder(observations)
+            x.append(temp_vis_enc)
+            # print("@@@@@@@@@@@@@vis enc shape ", temp_vis_enc.shape)
+        # print("h1")
         
         temp_bin_enc = self.bin_encoder(observations, pred_binSepMasks=pred_binSepMasks)
         # print("@@@@@@@@@@@@@bin enc shape ", temp_bin_enc.shape)
@@ -392,6 +402,7 @@ class AAViDSSPolicy(Policy):
             use_predictedLocation_in_policy=ppo_cfg.use_predictedLocation_in_policy,
             locationPredictor_encoderType=ppo_cfg.locationPredictor_encoderType,
             use_predictedLocationWoFeats_in_policy=ppo_cfg.use_predictedLocationWoFeats_in_policy, 
+            ablate_vision=ppo_cfg.ablate_vision, 
         )
 
         binSep_enc = PassiveSepEnc()
