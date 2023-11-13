@@ -13,7 +13,7 @@ SIMULATOR:
     PASSIVE_TRAIN_AUDIO_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed"
     PASSIVE_NONOVERLAPPING_VAL_AUDIO_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed"
 
-    NUM_WORKER: 60 
+    NUM_WORKER: 16  #60, 24
     BATCH_SIZE: 128 
     NUM_PASSIVE_DATAPOINTS_PER_SCENE: 30000
     NUM_PASSIVE_DATAPOINTS_PER_SCENE_EVAL: 30000 
