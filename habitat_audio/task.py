@@ -5,11 +5,12 @@ import json
 
 
 import numpy as np
+import math
 from gym import spaces
 
 from habitat.config import Config
 from habitat.core.dataset import Episode
-from habitat.tasks.nav.nav import NavigationTask, SimulatorTaskAction
+from habitat.tasks.nav.nav import NavigationTask, SimulatorTaskAction, Measure, EmbodiedTask, PointGoalSensor
 from habitat.core.registry import registry
 from habitat.core.simulator import (
     Sensor,
@@ -22,6 +23,8 @@ from habitat.tasks.utils import (
     quaternion_rotate_vector,
 )
 from habitat.sims.habitat_simulator.actions import HabitatSimActions
+from habitat.utils.visualizations import maps
+# from habitat.tasks.nav.nav import NavigationTask, Measure, EmbodiedTask, PointGoalSensor, SimulatorTaskAction
 
 IS_MOVING_SOURCE = True
 
@@ -122,6 +125,37 @@ class GroundTruthDeltaXDeltaYSensor(Sensor):
 
     def get_observation(self, *args: Any, observations, episode: Episode, **kwargs: Any):
         return self._sim.get_current_ground_truth_deltax_deltay()
+
+## CHANGE DONE HERE    
+@registry.register_sensor
+class GroundTruthGeodesicDistanceSensor(Sensor):
+    r"""Mixed binaural spectrogram magnitude at the current step
+    """
+
+    def __init__(self, *args: Any, sim: Simulator, config: Config, **kwargs: Any):
+        self._sim = sim
+        super().__init__(config=config)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any):
+        return "ground_truth_geodesic_distance"
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.PATH
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        assert hasattr(self.config, 'FEATURE_SHAPE')
+        sensor_shape = self.config.FEATURE_SHAPE
+
+        return spaces.Box(
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            shape=sensor_shape,
+            dtype=np.float32,
+        )
+
+    def get_observation(self, *args: Any, observations, episode: Episode, **kwargs: Any):
+        return self._sim.get_geo_dist_to_target_audio_source()
+    
 
 @registry.register_sensor
 class MixedBinAudioMagSensor(Sensor):
@@ -359,3 +393,49 @@ class PoseSensor(Sensor):
             [-agent_position_xyz[2], agent_position_xyz[0], agent_heading, ep_time],
             dtype=np.float32
         )
+    
+
+@registry.register_measure
+class NoveltyReward(Measure):
+    r"""
+    Assigns rewards based on the novelty of states visited. The environment is divided
+    into uniform grids of size GRID_SIZE. Each valid grid location is considered to be a
+    unique state. When an agent visits any location within a grid cell, the count for
+    that state is incremented. The novetly reward is given by:
+            r_t = 1/sqrt(n_s)
+    where n_s is the visitation count for state s_t.
+    """
+    def __init__(self, *args: Any, sim: Simulator, config: Config, **kwargs: Any):
+        self._sim = sim
+        self._config = config
+        self.current_episode_id = None
+        self._state_map = None
+        self.L_min = None
+        self.L_max = None
+        self._metric = 0.0
+        super().__init__()
+    def _get_uuid(self, *args: Any, **kwargs: Any):
+        return "novelty_reward"
+    def reset_metric(self, *args: Any, **kwargs: Any):
+        self._metric = 0.0
+        self.L_min = maps.COORDINATE_MIN
+        self.L_max = maps.COORDINATE_MAX
+        map_size = int((self.L_max - self.L_min) / self._config.GRID_SIZE) + 1
+        self._state_map = np.zeros((map_size, map_size))
+    def _convert_to_grid(self, position):
+        """position - (x, y, z) in real-world coordinates """
+        grid_x = (position[0] - self.L_min) / self._config.GRID_SIZE
+        grid_y = (position[2] - self.L_min) / self._config.GRID_SIZE
+        grid_x = int(grid_x)
+        grid_y = int(grid_y)
+        return (grid_x, grid_y)
+    def update_metric(self, *args: Any, episode, action, task: EmbodiedTask, **kwargs: Any):
+        episode_id = (episode.episode_id, episode.scene_id)
+        if episode_id != self.current_episode_id:
+            self.current_episode_id = episode_id
+            self.reset_metric(args, episode, kwargs)
+        agent_position = self._sim.get_agent_state().position
+        grid_x, grid_y = self._convert_to_grid(agent_position)
+        self._state_map[grid_y, grid_x] += 1.0
+        novelty_reward = 1/math.sqrt(self._state_map[grid_y, grid_x])
+        self._metric = novelty_reward
