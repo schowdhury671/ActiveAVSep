@@ -190,10 +190,10 @@ class PassiveDataset(Dataset):
                     self.compute_audiospects(rirs_audio, target_class=self.target_classes[item])
                     
                 self.complete_datapoints[item] = (mixed_audio, gt_bin_mag, gt_mono_mag, target_class)
-                print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
+                # print("****shape of complete datapoints after inserting values ", len(self.complete_datapoints))
 
     def __len__(self):
-        return len(self.complete_datapoint_files)
+        return len(self.complete_datapoint_files[:])  # : (github), 6
 
     def __getitem__(self, item):
         if not self.use_cache:

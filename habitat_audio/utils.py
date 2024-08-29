@@ -52,7 +52,7 @@ def load_points_data(parent_folder, graph_file, transform=True, scene_dataset="r
     """
     
     
-    parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/' + parent_folder
+    # parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/' + parent_folder
     points_file = os.path.join(parent_folder, 'points.txt')
     graph_file = os.path.join(parent_folder, graph_file)
 

@@ -13,10 +13,10 @@ SIMULATOR:
     PASSIVE_TRAIN_AUDIO_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed"
     PASSIVE_NONOVERLAPPING_VAL_AUDIO_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed"
 
-    NUM_WORKER: 16  #60, 24
-    BATCH_SIZE: 128 
-    NUM_PASSIVE_DATAPOINTS_PER_SCENE: 30000
-    NUM_PASSIVE_DATAPOINTS_PER_SCENE_EVAL: 30000 
+    NUM_WORKER: 4  # 2, 4, 16 (github), 60, 24
+    BATCH_SIZE: 128   # 4, 128 (github)
+    NUM_PASSIVE_DATAPOINTS_PER_SCENE: 30000   # 30000 (github), 6 
+    NUM_PASSIVE_DATAPOINTS_PER_SCENE_EVAL: 30000  # 30000 (github), 6
 
 TASK:
   TYPE: AAViDSS

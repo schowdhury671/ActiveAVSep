@@ -252,7 +252,7 @@ class SubGraph_sampling():
       existing_destinations[dest_node] = 1
 
 
-      filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed'
+      filedir = '/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/valUnheard_preprocessed'
       fils = [fil for fil in os.listdir(filedir) if mono_name in fil]
       cnt = len(fils)
 
@@ -275,25 +275,43 @@ class SubGraph_sampling():
             delta_x_az, delta_y_az = -delta_x, -delta_y
           else:
             delta_x_az, delta_y_az = delta_y, -delta_x
-          sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':mono_file_path}]
+          sampled_list += [{'binaural_rir_filename':'/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename':mono_file_path}]
 
     return sampled_list
 
 
 
-directory = "./content/"
+
+NUM_EPISODES_PER_SCENE = "all"    # "all", 2, 5
+
+DUMP_DR_ROOT = "/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/passive_datasets/v1"
+assert os.path.isdir(DUMP_DR_ROOT)
+
+DUMP_FP = f"{DUMP_DR_ROOT}/val_locationPredictor/{NUM_EPISODES_PER_SCENE}episodesPerScene.json"
 
 list_all_wavs = []
+if os.path.isfile(DUMP_FP):
+    with open(DUMP_FP, "r") as fi:
+        list_all_wavs = json.load(fi)["val"]
 
-file_path = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/valUnheard_100episodes/valUnheard_100episodes.json.gz'
+file_path = '/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/active_datasets/v1/valUnheard_100episodes/valUnheard_100episodes.json.gz'
+assert os.path.isfile(file_path), print(file_path)
+# with gzip.open(file_path, "rb") as f:
+#     scene = json.loads(f.read(), encoding="utf-8")
 with gzip.open(file_path, "rb") as f:
     scene = json.loads(f.read(), encoding="utf-8")
 
     list_episodes = scene['episodes']
+    if isinstance(NUM_EPISODES_PER_SCENE, str):
+        assert NUM_EPISODES_PER_SCENE == "all"
+    elif isinstance(NUM_EPISODES_PER_SCENE, int):
+        list_episodes = list_episodes[:NUM_EPISODES_PER_SCENE]
+    else:
+        raise ValueError
 
     for i in range(len(list_episodes)):
 
-        parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
+        parent_folder = '/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
 
         points,graph = load_points_data(parent_folder, 'graph.pkl', scene_dataset="mp3d")
 
@@ -311,6 +329,6 @@ with gzip.open(file_path, "rb") as f:
 dict_wavs = {'val':list_all_wavs}
 
 # import pdb; pdb.set_trace()
-with open("val_wavs_rectified_25oct.json", "w") as outfile:
+with open(DUMP_FP, "w") as outfile:
     # json_data refers to the above JSON
     json.dump(dict_wavs, outfile)

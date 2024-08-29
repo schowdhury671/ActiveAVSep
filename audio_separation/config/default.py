@@ -17,7 +17,7 @@ CONFIG_FILE_SEPARATOR = ","
 # -----------------------------------------------------------------------------
 _C = CN()
 _C.SEED = 0
-_C.BASE_TASK_CONFIG_PATH = "configs/tasks/pointnav.yaml"
+_C.BASE_TASK_CONFIG_PATH = "configs/tasks/pretrain_passive.yaml"	# pointnav (github), pretrain_passive
 _C.TASK_CONFIG = CN()  # task_config will be stored as a config node
 _C.CMD_TRAILING_OPTS = []  # store command line options as list of strings
 _C.TRAINER_NAME = "ppo"
@@ -234,7 +234,12 @@ def merge_from_path(config, config_paths):
 			else:
 				config_paths = [config_paths]
 
+		# print(config_paths)
+		# print("*" * 80)
 		for config_path in config_paths:
+			# print("-" * 80)
+			# print(config)
+			# print("-" * 80)
 			config.merge_from_file(config_path)
 	return config
 
@@ -256,7 +261,7 @@ def get_config(
 	    model_dir: suffix for output dirs
 	    run_type: either train or eval
 	"""
- 
+
 	#import pdb; pdb.set_trace()
 	config = merge_from_path(_C.clone(), config_paths)
 	#import pdb; pdb.set_trace()

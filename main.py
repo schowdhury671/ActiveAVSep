@@ -54,6 +54,10 @@ def main():
         default=-1,
         help="Evaluation interval of checkpoints",
     )
+    parser.add_argument(
+        "--pretrain",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     # run exp
@@ -69,7 +73,10 @@ def main():
 
         # print("==================val_config: ", val_config)
 
-        trainer = trainer_init(config, val_config=val_config)
+        if args.pretrain:
+            trainer = trainer_init(config)
+        else:
+            trainer = trainer_init(config, val_config=val_config)
 
         level = logging.DEBUG if config.DEBUG else logging.INFO
         logging.basicConfig(level=level, format='%(asctime)s, %(levelname)s: %(message)s',

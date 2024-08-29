@@ -1,1 +1,7 @@
 *.pth
+*__pycache__*
+data/audio_data
+data/active_datasets
+slurm
+runs
+*.pyc

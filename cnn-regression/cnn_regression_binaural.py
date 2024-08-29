@@ -331,7 +331,7 @@ class BinauralRIRdataset(Dataset):
                 self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 16000))  # self.cached_noise_sample = np.random.normal(0, 1, (len(self.list_wavs), 2, 1))
 
     def __len__(self):
-        return  len(self.list_wavs)    #, 2   len(self.list_wavs)
+        return  len(self.list_wavs[:])    #:, :6
 
     def __getitem__(self, idx):
 
@@ -341,6 +341,9 @@ class BinauralRIRdataset(Dataset):
         bin_rir_fname = self.list_wavs[idx]['binaural_rir_filename'] # please check the keys here from the list of dicts
         target_xy = np.asarray(self.list_wavs[idx]['target']) # please check the keys here from the list of dicts
         mono_fname = self.list_wavs[idx]['mono_filename']
+
+        assert os.path.isfile(bin_rir_fname)
+        assert os.path.isfile(mono_fname)
 
         folder_name = 'precomputed_data'
         gt_bin_mono_fname = folder_name + '/' + bin_rir_fname.replace("/", "_")[:-4].split("binaural_rirs")[-1] + '_' + mono_fname.replace("/", "_")[:-4].split("audio_data")[-1] + '.pt'
@@ -433,34 +436,65 @@ class BinauralRIRdataset(Dataset):
             return gt_bin_mag.permute(2,0,1), torch.from_numpy(target_xy) / 1. # 50. 
 
 
-USE_MIC_NOISE = True    # True, 
-MIC_NOISE_LEVEL_IN_DB = 15  # 15, 30, 45, 60
+USE_MIC_NOISE = True    # True, False
+MIC_NOISE_LEVEL_IN_DB = 60  # 15, 30, 45, 60
+
+DATASET_VERSION = 1
+BATCH_SIZE = 512  # 512
+NUM_WORKERS = 4 # 4
+
+NUM_EPOCHS = 100
+LR = 1e-4   # 1e-4, 1e-5
+
+ENCODER_TYPE = "resnet"
+
+RUN_DRNM = "lr1e4_60dBnoise"  # "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
+
+
+DATASET_ROOT_DR = f"data/passive_datasets/v{DATASET_VERSION}"
+RUNS_ROOT_DR = f"runs/passivePretrain_locationPredictor"
+
+
+RUN_DR = f"{RUNS_ROOT_DR}/{RUN_DRNM}"
+if not os.path.isdir(RUN_DR):
+    os.makedirs(RUN_DR)
 
 
 dsets = dict()
-dsets['train'] = BinauralRIRdataset(filename='train_wavs_filtered_rectified_25oct_20.json',
+dsets['train'] = BinauralRIRdataset(filename=f'{DATASET_ROOT_DR}/train_locationPredictor/allepisodesPerScene.json',
                                     split='train', 
                                     use_mic_noise=USE_MIC_NOISE,
                                     mic_noise_level=MIC_NOISE_LEVEL_IN_DB)
-dsets['val'] = BinauralRIRdataset(filename='val_wavs_filtered_rectified_25oct_20.json',
+dsets['val'] = BinauralRIRdataset(filename=f'{DATASET_ROOT_DR}/val_locationPredictor/allepisodesPerScene.json',
                                   split='val',
                                   use_mic_noise=USE_MIC_NOISE,
                                   mic_noise_level=MIC_NOISE_LEVEL_IN_DB,) # added for validation
 
 dataloaders = dict()
-dataloaders['train'] = DataLoader(dsets['train'], batch_size=512, shuffle=True, num_workers=4, pin_memory=True, drop_last=False)
+dataloaders['train'] = DataLoader(dsets['train'], 
+                                  batch_size=BATCH_SIZE, 
+                                  shuffle=True, 
+                                  num_workers=NUM_WORKERS, 
+                                  pin_memory=True, 
+                                  drop_last=False)
 # print("done!!!")
-dataloaders['val'] = DataLoader(dsets['val'], batch_size=512, shuffle=False, num_workers=4, pin_memory=True, drop_last=False) # added for validation
+dataloaders['val'] = DataLoader(dsets['val'], 
+                                batch_size=BATCH_SIZE, 
+                                shuffle=False, 
+                                num_workers=NUM_WORKERS, 
+                                pin_memory=True, 
+                                drop_last=False) # added for validation
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+n_available_gpus = torch.cuda.device_count()
+device_ids = list(range(n_available_gpus))  # [0,1,2,3]: for 4 gpus
 
 # model = models.resnet18(pretrained=True)
 # num_ftrs = model.fc.in_features
 # model.fc = torch.nn.Linear(num_ftrs, 2)
 
-root_dir = "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
-encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
-device_ids = [0,1,2,3] # for 4 gpus
+root_dir = f"{RUNS_ROOT_DR}/{RUN_DRNM}"
+encoder_type= ENCODER_TYPE # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
 
 os.makedirs(root_dir, exist_ok = True)
 model = AudioCNN(output_size=2,  encoder_type=encoder_type)
@@ -468,7 +502,7 @@ model = AudioCNN(output_size=2,  encoder_type=encoder_type)
 model = nn.DataParallel(model, device_ids = device_ids)
 
 criterion = torch.nn.L1Loss()    # torch.nn.MSELoss()    
-optimizer = optim.Adam(model.parameters(), lr=0.0001, eps=1e-8)
+optimizer = optim.Adam(model.parameters(), lr=LR, eps=1e-8)
 
 try:
     val_checkpoint = torch.load(root_dir + '/last_ckpt.pth')
@@ -488,7 +522,7 @@ for state in optimizer.state.values():
         if isinstance(v, torch.Tensor):
             state[k] = v.to(device)
 
-num_epochs = 100
+num_epochs = NUM_EPOCHS
 # best_val_loss = 10000000.
 # best_train_loss = 10000000.
 

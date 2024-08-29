@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import networkx as nx
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 
 
@@ -85,8 +84,6 @@ class SubGraph_sampling():
         self.points_to_sample = points_to_sample
         self.plotting = False
         self.actions_dict = {'STOP':0, 'FORWARD':1, 'LEFT':2, 'RIGHT':3}
-        self.filedir = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed'
-        self.all_sounds = os.listdir(self.filedir)
 
   def find_subgraphs(self, G, plotting=False):
 
@@ -163,8 +160,8 @@ class SubGraph_sampling():
     attempts = 50
     i = 0
     while dest_found==False and i < attempts:
-      # perm_arr = node_arr[np.random.permutation(len(node_arr))]
-      dest_node = node_arr[np.random.randint(len(node_arr))]
+      perm_arr = node_arr[np.random.permutation(len(node_arr))]
+      dest_node = perm_arr[0]
       if dest_node not in existing_destinations:
         if dest_node != start_node:
           dest_found = True
@@ -230,7 +227,7 @@ class SubGraph_sampling():
 
     return actions, corrected_path
 
-  def execute(self, graph, start_node, scene_name, mono_name, points_to_sample=None,):
+  def execute(self, graph, start_node, points_to_sample=None):
     if points_to_sample is None:
       points_to_sample = self.points_to_sample
     subgraphs_of_G_ex, _ = self.find_subgraphs(graph, plotting=self.plotting)
@@ -246,76 +243,145 @@ class SubGraph_sampling():
     for pts in range(points_to_sample):
       dest_node = self.sample_destination(start_node, node_to_point_dict, existing_destinations = existing_destinations)
       if dest_node != start_node:
-        delta_x = node_to_point_dict[dest_node][0] - node_to_point_dict[start_node][0]
-        delta_y = node_to_point_dict[dest_node][2] - node_to_point_dict[start_node][2]
+        path = self.find_shortest_path(s_graph, start_node, dest_node)
+        actions_list, corrected_path = self.collect_actions(s_graph, path)
       else:
-        delta_x = node_to_point_dict[start_node][0] - node_to_point_dict[start_node][0]
-        delta_y = node_to_point_dict[start_node][2] - node_to_point_dict[start_node][2]
+        path = []
+        actions_list = [self.actions_dict['STOP']]
       existing_destinations[dest_node] = 1
+      sampled_list += [{'start':start_node, 'target':dest_node, 'graph':s_graph, 'path':corrected_path, 'actions_list':actions_list}]
 
-      
-      # fils = [fil for fil in self.list_monos if mono_name in fil]
-      fils = self.all_sounds
-      cnt = len(fils)
-      mono_name_chunk = fils[np.random.randint(cnt)]
-      mono_file_path = self.filedir + '/' + mono_name_chunk
-      assert os.path.isfile(mono_file_path)
-
-      for az in [0, 90, 180, 270]:
-        if az == 0:
-           delta_x_az, delta_y_az = delta_x, delta_y
-        elif az == 90:
-           delta_x_az, delta_y_az = -delta_y, delta_x
-        elif az == 180:
-           delta_x_az, delta_y_az = -delta_x, -delta_y
-        else:
-           delta_x_az, delta_y_az = delta_y, -delta_x
-        sampled_list += [{'binaural_rir_filename':'/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/binaural_rirs/mp3d/' + scene_name + '/' + str(az)+'/'+str(start_node)+'_'+str(dest_node)+'.wav', 'target': [delta_x_az, delta_y_az], 'mono_filename': mono_file_path}]
-
-    return sampled_list
+    return sampled_list, node_to_point_dict
 
 
+'''
+####################################  first step is for modifying the scene json files with new key in the dict
 
 directory = "./content/"
 
-list_all_wavs = []
 
-subgraph_sampling = SubGraph_sampling(points_to_sample=1) 
-for ite, filename in enumerate(tqdm(os.listdir(directory))):
-    # if ite == 2:
-    #    break
+for filename in os.listdir(directory):
     file_path = os.path.join(directory, filename)
-    if 'moving_source' not in file_path:
-        with gzip.open(file_path, "rb") as f:
-            scene = json.loads(f.read(), encoding="utf-8")
+    
+    with gzip.open(file_path, "rb") as f:
+      scene = json.loads(f.read(), encoding="utf-8")
+      
+      list_episodes = scene['episodes']
+      
+      for i in range(len(list_episodes)):
+       
+        parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
+        points,graph = load_points_data(parent_folder, 'graph.pkl', scene_dataset="mp3d")
         
-            list_episodes = scene['episodes']
+        start_point = list_episodes[i]['start_position']
         
-            for i in range(len(list_episodes)):
+        for node in graph.nodes():  
+          temp_var = graph.nodes()[node]['point']
+          
+          start_point[0] = np.round(start_point[0],6)
+          start_point[1] = np.round(start_point[1],6)
+          start_point[2] = np.round(start_point[2],6)
+          
+                    
+          #import pdb; pdb.set_trace()
+          if np.round(temp_var[0],6) == start_point[0] and np.round(temp_var[1],6) == start_point[1] and np.round(temp_var[2],6) == start_point[2]:
+            start_node = node
+            break
         
-                # print("@#@#@#@#@#@## scene episodes1 ", scene['episodes'][0])
-                # print("******************* scene episodes2 ", scene['episodes'][0]['scene_id'])
-                parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
+        sampled_pts, node_to_point_dict = SubGraph_sampling(points_to_sample=1).execute(graph, start_node)
+        list_episodes[i]['moving_source_positions'] = sampled_pts[0]['path']
+    
+    # write to .gz file
+    # Convert data to JSON
+    json_str = json.dumps(list_episodes, default=str)
+
+    # Write JSON to .gz file
+    print("writing file path ", file_path)
+    with gzip.GzipFile(file_path, 'w') as fout:
+      fout.write(json_str.encode('utf-8'))
+        
+'''
+
+##########################   second steps is for placing the list from that key to a different key
+
+
+'''
+directory = "./content/"
+
+
+for filename in os.listdir(directory):
+    file_path = os.path.join(directory, filename)
+    
+    with gzip.open(file_path, "rb") as f:
+      scene = json.loads(f.read()) #  , encoding="utf-8")
+      
+      list_episodes = scene # ['episodes']
+      
+      for i in range(len(list_episodes)):
+        
+        try:
+          list_episodes[i]['moving_source_positions'][-1] = int(list_episodes[i]['moving_source_positions'][-1])
+          print(file_path, i, 'str found')
+        except:       
+          pass
+    
+    # write to .gz file
+    # Convert data to JSON
+    json_str = json.dumps({'episodes': list_episodes})
+
+    # Write JSON to .gz file
+    print("writing file path ", file_path)
+    with gzip.GzipFile(file_path, 'w') as fout:
+      fout.write(json_str.encode('utf-8'))    
+      
+
+
+'''
+##########################    dump to a new json  file with moving_source_scene
+
+# '''
+
+directory = "./content/"
+
+
+for filename in os.listdir(directory):
+    file_path = os.path.join(directory, filename)
+    
+    if 'moving' not in filename:
+    
+      with gzip.open(file_path, "rb") as f:
+        scene = json.loads(f.read()) #  , encoding="utf-8")
+        
+        list_episodes = scene['episodes']
+        l = []
+        
+        for ite in range(len(list_episodes)):
+          
+          # list_episodes[ite]['start_room'] = {'moving_source_positions':list_episodes[ite]['moving_source_positions']}
+          # list_episodes[ite].pop('moving_source_positions')
+          
+          #import pdb; pdb.set_trace()
+          
+          if len(list_episodes[ite]['moving_source_positions']) > 18:
+            list_episodes[ite]['moving_source_positions'] = list_episodes[ite]['moving_source_positions'][:18]
                 
-                points,graph = load_points_data(parent_folder, 'graph.pkl', scene_dataset="mp3d")
-            
-                start_point = list_episodes[i]['start_position']
-            
-                for node in graph.nodes():  
-                    temp_var = graph.nodes()[node]['point']
-            
-                    if np.round(temp_var[0],6) == start_point[0] and np.round(temp_var[1],6) == start_point[1] and np.round(temp_var[2],6) == start_point[2]:
-                        start_node = node
-                        break
-            
-                list_all_wavs += subgraph_sampling.execute(graph, start_node, scene['episodes'][0]['scene_id'].split("/")[0], list_episodes[i]['info'][0]['sound'])
-
-dict_wavs = {'train':list_all_wavs}
-
-# import pdb; pdb.set_trace()
-with open("train_wavs_rectified_25oct.json", "w") as outfile:
-    # json_data refers to the above JSON
-    json.dump(dict_wavs, outfile)
+          l += [{list_episodes[ite]['episode_id']:list_episodes[ite]['moving_source_positions']}] # ['start_room']
+          list_episodes[ite]['start_room'] = None
+      
+      # write to .gz file
+      # Convert data to JSON
+      json_str = json.dumps({'episodes': list_episodes})
+      
+      json_str2 = json.dumps({'episodes': l})
+  
+      # Write JSON to .gz file
+      print("writing file path ", file_path)
+      with gzip.GzipFile(file_path, 'w') as fout:
+        fout.write(json_str.encode('utf-8'))   
         
-    
-    
+      with gzip.GzipFile(file_path[:-8]+'_moving_source.json.gz', 'w') as fout:
+        fout.write(json_str2.encode('utf-8'))      
+         
+
+
+# '''
