@@ -86,6 +86,8 @@ class HabitatSimAudioEnabled(HabitatSim):
         self._mixed_bin_audio_phase = None
         self._mono_audio_sampling_starting_idxs = []
         self._target_class = None
+        # print("sm 0: ", self.current_scene_name)
+        # print("*" * 80)
         self.points, self.graph = load_points_data(self.meta_dir, self.config.AUDIO.GRAPH_FILE,
                                                    scene_dataset=self.config.SCENE_DATASET)
         for node in self.graph.nodes():
@@ -450,47 +452,50 @@ class HabitatSimAudioEnabled(HabitatSim):
         return self._mixed_bin_audio_phase
     
     def get_current_ground_truth_deltax_deltay(self):
-    
-        agent_loc = self.graph.nodes[self._receiver_position_index]['point'] # current agent location
-        mov_src_loc = self.graph.nodes[self._source_position_indices[0]]['point'] # current moving source location
+        try:
+            agent_loc = self.graph.nodes[self._receiver_position_index]['point'] # current agent location
+            mov_src_loc = self.graph.nodes[self._source_position_indices[0]]['point'] # current moving source location
 
-        if self._agent_start_index is not None:
-            agent_start_loc = self.graph.nodes[self._agent_start_index]['point'] # agent start (0th) location
-        else:
-            raise ValueError()
-        
-        # print("################## self._one_step_ahead_source: ", self._one_step_ahead_source)
-        if self._one_step_ahead_source is not None:
-            future_mov_src_loc = self.graph.nodes[self._one_step_ahead_source]['point'] # one time-step ahead (t+1) moving source location
-        else:
-            raise ValueError()
-        
-        # agent_loc = agent_start_loc # this changes agent_loc to agent 0th location
-        # mov_src_loc = future_mov_src_loc # this changes moving_src_loc to (t+1) moving source location
-
-        del_x_az = mov_src_loc[0] - agent_loc[0]
-        del_y_az = mov_src_loc[2] - agent_loc[2]
-
-        if self.IS_GT_LOCATION_CORRECTLY_ORIENTED:
-
-            az = self.azimuth_angle
-
-            if az == 0:
-                delta_x_az, delta_y_az = del_x_az, del_y_az
-            elif az == 90:
-                delta_x_az, delta_y_az = -del_y_az, del_x_az
-            elif az == 180:
-                delta_x_az, delta_y_az = -del_x_az, -del_y_az
+            if self._agent_start_index is not None:
+                agent_start_loc = self.graph.nodes[self._agent_start_index]['point'] # agent start (0th) location
             else:
-                delta_x_az, delta_y_az = del_y_az, -del_x_az
-
-            # print("@@@@@@@@@@@@@@ self.IS_GT_LOCATION_CORRECTLY_ORIENTED, az : ", self.IS_GT_LOCATION_CORRECTLY_ORIENTED, az)
-
-        else:
-
-            delta_x_az, delta_y_az = del_x_az, del_y_az
+                raise ValueError()
             
-        return np.array([delta_x_az, delta_y_az]) # format is np.array([delta_x, delta_y])
+            # print("################## self._one_step_ahead_source: ", self._one_step_ahead_source)
+            if self._one_step_ahead_source is not None:
+                future_mov_src_loc = self.graph.nodes[self._one_step_ahead_source]['point'] # one time-step ahead (t+1) moving source location
+            else:
+                raise ValueError()
+            
+            # agent_loc = agent_start_loc # this changes agent_loc to agent 0th location
+            # mov_src_loc = future_mov_src_loc # this changes moving_src_loc to (t+1) moving source location
+
+            del_x_az = mov_src_loc[0] - agent_loc[0]
+            del_y_az = mov_src_loc[2] - agent_loc[2]
+
+            if self.IS_GT_LOCATION_CORRECTLY_ORIENTED:
+
+                az = self.azimuth_angle
+
+                if az == 0:
+                    delta_x_az, delta_y_az = del_x_az, del_y_az
+                elif az == 90:
+                    delta_x_az, delta_y_az = -del_y_az, del_x_az
+                elif az == 180:
+                    delta_x_az, delta_y_az = -del_x_az, -del_y_az
+                else:
+                    delta_x_az, delta_y_az = del_y_az, -del_x_az
+
+                # print("@@@@@@@@@@@@@@ self.IS_GT_LOCATION_CORRECTLY_ORIENTED, az : ", self.IS_GT_LOCATION_CORRECTLY_ORIENTED, az)
+
+            else:
+
+                delta_x_az, delta_y_az = del_x_az, del_y_az
+                
+            return np.array([delta_x_az, delta_y_az]) # format is np.array([delta_x, delta_y])
+
+        except:
+            return np.array([0, 0])
 
     def get_current_mixed_bin_audio_mag_spec(self):
         r"""
@@ -627,8 +632,11 @@ class HabitatSimAudioEnabled(HabitatSim):
         :return: geodesic distance to target audio source
         """
         current_position = self.get_agent_state().position.tolist()
-        distance_to_target = self.geodesic_distance(
-            current_position, self.graph.nodes[self._source_position_indices[0]]['point']
-        )
+        try:
+            distance_to_target = self.geodesic_distance(
+                current_position, self.graph.nodes[self._source_position_indices[0]]['point']
+            )
+        except:
+            distance_to_target = 0
         return np.array([distance_to_target])
 

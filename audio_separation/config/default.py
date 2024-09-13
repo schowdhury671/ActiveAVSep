@@ -52,13 +52,27 @@ _C.LOG_VIDEO_AFTER = 25
 _C.EPS_SCENES = []
 _C.EPS_SCENES_N_IDS = []
 _C.JOB_ID = 1
+_C.RESUME_FROM_STATE_DICT = False
+_C.STATE_DICT_PATH = None
+_C.RESUME_AFTER_PREEMPTION = False
+_C.VAL_WHILE_TRAINING = False
 # -----------------------------------------------------------------------------
 # EVAL CONFIG
 # -----------------------------------------------------------------------------
 _C.EVAL = CN()
-# The split to evaluate on
-_C.EVAL.SPLIT = "val"
-_C.EVAL.USE_CKPT_CONFIG = True
+"""
+The split to evaluate on --
+None: https://github.com/facebookresearch/chat2map-official/tree/main/chat2map
+'val': https://github.com/schowdhury671/ActiveAVSep/tree/main
+"""
+_C.EVAL.SPLIT = None	# None, 'val'
+_C.EVAL.USE_CKPT_CONFIG = False
+"""
+False: https://github.com/facebookresearch/chat2map-official/tree/main/chat2map
+True: https://github.com/schowdhury671/ActiveAVSep/tree/main
+"""
+_C.EVAL.DATA_PARALLEL_TRAINING = False
+_C.EVAL.EPISODE_COUNT = 500
 # -----------------------------------------------------------------------------
 # REINFORCEMENT LEARNING (RL) ENVIRONMENT CONFIG
 # -----------------------------------------------------------------------------
@@ -199,9 +213,15 @@ _TC.SIMULATOR.SCENE_DATASET = "mp3d"
 _TC.SIMULATOR.MAX_EPISODE_STEPS = 20 
 _TC.SIMULATOR.GRID_SIZE = 1.0
 _TC.SIMULATOR.USE_RENDERED_OBSERVATIONS = True
-_TC.SIMULATOR.RENDERED_OBSERVATIONS = 'data/scene_observations'
+_TC.SIMULATOR.RENDERED_OBSERVATIONS = 'data/scene_observations_new'
 _TC.SIMULATOR.AUDIO = CN()
-_TC.SIMULATOR.AUDIO.MONO_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed"
+"""
+
+"""
+# _TC.SIMULATOR.AUDIO.MONO_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/1s_chunks/train_preprocessed"
+_TC.SIMULATOR.AUDIO.MONO_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/train_preprocessed"
+_TC.SIMULATOR.AUDIO.MONO_VAL_UNHEARD_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/valUnheard_preprocessed"
+_TC.SIMULATOR.AUDIO.MONO_TEST_UNHEARD_DIR = "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/testUnheard_preprocessed"
 _TC.SIMULATOR.AUDIO.RIR_DIR = "data/binaural_rirs/mp3d"
 _TC.SIMULATOR.AUDIO.META_DIR = "data/metadata/mp3d"
 _TC.SIMULATOR.AUDIO.PASSIVE_DATASET_VERSION = "v1"
@@ -277,10 +297,11 @@ def get_config(
 	config.TENSORBOARD_DIR = os.path.join(config.MODEL_DIR, config.TENSORBOARD_DIR)
 	config.CHECKPOINT_FOLDER = os.path.join(config.MODEL_DIR, 'data')
 	config.LOG_FILE = os.path.join(config.MODEL_DIR, config.LOG_FILE)
-	config.EVAL_CKPT_PATH_DIR = os.path.join(config.MODEL_DIR, 'data')
+	if config.EVAL_CKPT_PATH_DIR == "data/checkpoints":
+		config.EVAL_CKPT_PATH_DIR = os.path.join(config.MODEL_DIR, 'data')
 
 	dirs = [config.TENSORBOARD_DIR, config.CHECKPOINT_FOLDER]
-	if run_type == 'train':
+	if (run_type == 'train') and (not config.RESUME_AFTER_PREEMPTION):
 		# check dirs
 		if any([os.path.exists(d) for d in dirs]):
 			for d in dirs:
@@ -300,6 +321,9 @@ def get_config(
 
 	config.TASK_CONFIG.SIMULATOR.MAX_EPISODE_STEPS = config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
 
+	config.TASK_CONFIG.DATASET.EVAL_SPLIT = config.EVAL.SPLIT
+	config.TASK_CONFIG.DATASET.EVAL_EPISODE_COUNT = config.EVAL.EPISODE_COUNT
+	
 	config.TASK_CONFIG.freeze()
 
 	config.freeze()

@@ -1,7 +1,14 @@
 *.pth
-*__pycache__*
+__pycache__*
 data/audio_data
 data/active_datasets
+data/binaural_rirs
+data/metadata
+data/passive_datasets
+data/scene_datasets
+data/scene_observations_new
 slurm
 runs
 *.pyc
+core*
+audio_separation/__pycache__*

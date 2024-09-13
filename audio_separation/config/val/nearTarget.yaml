@@ -6,8 +6,10 @@ EXTRA_DEPTH: True
 EVAL_EPISODE_COUNT: 20
 
 EVAL:
-  SPLIT: "val_100episodes"
-  USE_CKPT_CONFIG: False # True
+  SPLIT: "val_movingSource_100episodes"  # val_100episodes, val_movingSource_100episodes
+  ### True: https://github.com/SAGNIKMJR/active-AV-dynamic-separation/tree/main
+  ### False: https://github.com/schowdhury671/ActiveAVSep/tree/main
+  USE_CKPT_CONFIG: False    # True, False
 
 RL:
   PPO:

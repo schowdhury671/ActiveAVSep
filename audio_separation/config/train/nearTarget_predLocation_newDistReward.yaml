@@ -1,29 +1,45 @@
 BASE_TASK_CONFIG_PATH: "configs/tasks/nearTarget/train_nearTarget.yaml"
-NUM_PROCESSES: 14
+NUM_PROCESSES: 14   # 14, 28
 SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
 EXTRA_DEPTH: True
 
-#### 8 GPU
+#### 8 GPUs + 14 processes / 4 GPUs + 28 processes
 NUM_UPDATES: 67142
 LOG_INTERVAL: 50
-CHECKPOINT_INTERVAL: 1342   # 90, 671 was 5, 1342
+### 90: https://github.com/SAGNIKMJR/active-AV-dynamic-separation
+### 1342: https://github.com/schowdhury671/ActiveAVSep/tree/main
+### 671 was 5: ??
+### 2, 1: debug
+CHECKPOINT_INTERVAL: 90   # 90, 1342, 671 was 5, 2, 1
 
+VAL_WHILE_TRAINING: True
+EVAL:
+  SPLIT: "val_movingSource_100episodes"
+  USE_CKPT_CONFIG: True
+  EPISODE_COUNT: 100
+
+RESUME_AFTER_PREEMPTION: True
 
 RL:
   PPO:
     # replace with path to checkpoint for passive pretraining
-    pretrained_passive_separators_ckpt: "runs/passive_pretrain/new/data/best_ckpt_nonoverlapping_val.pth"
+    pretrained_passive_separators_ckpt: "runs/passivePretrain_audioSeparator/data_fromBo/best_ckpt_nonoverlapping_val.pth"
 
     use_location_in_policy: True
 
     use_predictedLocation_in_policy: True
     locationPredictor_encoderType: "resnet"
-    locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor1/best_val_ckpt_b.pth"
-    # locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1/best_val_ckpt.pth"
+
+    ### CVPR 24 checkpoints
+    # locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_28oct_rectified_20_lr_1e-4_l1_factor1/best_val_ckpt_b.pth"
+    # # locationPredictor_ckpt: "data/active_datasets/v1_old/train_731243episodes/regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1/best_val_ckpt.pth"
+    
+    ### ICLR/CVPR 25 checkpoints
+    locationPredictor_ckpt: "runs/passivePretrain_locationPredictor/lr1e4_noNoise/best_val_ckpt.pth"    # lr1e4_noNoise, lr1e4_15dBnoise, lr1e4_30dBnoise, lr1e4_45dBnoise, lr1e4_60dBnoise
 
     use_negDist_reward: True
     sep_reward_wt: 1.0 
-    geo_reward_wt: 0.1 # assign reward weightage here ## CHANGE DONE HERE
+    geo_reward_wt: 0.1  # assign reward weightage here ## CHANGE DONE HERE
 
     hidden_size: 512
 
@@ -66,4 +82,3 @@ RL:
     ddppo_distrib_backend: "NCCL"
     short_rollout_threshold: 1.0  
     sync_frac: 0.6
-   

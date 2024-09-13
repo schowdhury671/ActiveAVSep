@@ -448,6 +448,7 @@ LR = 1e-4   # 1e-4, 1e-5
 
 ENCODER_TYPE = "resnet"
 
+""" run dirs copied from active training config: regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1 (probably used), regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1  """
 RUN_DRNM = "lr1e4_60dBnoise"  # "regression_resnet_filtered_2nov_rectified_20_lr_1e-4_l1_factor1_micNoise15_updated"
 
 

@@ -40,6 +40,7 @@ from habitat.core.logging import logger
 from habitat.core.utils import tile_images
 
 from audio_separation.common.sync_vector_env import SyncVectorEnv
+from audio_separation.common.environments import EnvCustom, RLEnvCustom 
 
 
 STEP_COMMAND = "step"
@@ -91,7 +92,7 @@ class VectorEnvCustom:
 
     def __init__(
         self,
-        make_env_fn: Callable[..., Union[Env, RLEnv]] = _make_env_fn,
+        make_env_fn: Callable[..., Union[Env, RLEnv, EnvCustom, RLEnvCustom]] = _make_env_fn,
         env_fn_args: Sequence[Tuple] = None,
         auto_reset_done: bool = True,
         multiprocessing_start_method: str = "forkserver",
@@ -183,7 +184,7 @@ class VectorEnvCustom:
             while command != CLOSE_COMMAND:
                 if command == STEP_COMMAND:
                     # different step methods for habitat.RLEnv and habitat.Env
-                    if isinstance(env, (habitat.RLEnv, gym.Env)):
+                    if isinstance(env, (habitat.RLEnv, gym.Env, RLEnvCustom)):
                         # habitat.RLEnv
                         observations, reward, done, info = env.step(**data)
                         if auto_reset_done and done:
@@ -191,7 +192,7 @@ class VectorEnvCustom:
                         connection_write_fn(
                             (observations, reward, done, info)
                         )
-                    elif isinstance(env, habitat.Env):  # type: ignore
+                    elif isinstance(env, habitat.Env, EnvCustom):  # type: ignore
                         # habitat.Env
                         observations = env.step(**data)
                         if auto_reset_done and env.episode_over:
@@ -240,7 +241,7 @@ class VectorEnvCustom:
     def _spawn_workers(
         self,
         env_fn_args: Sequence[Tuple],
-        make_env_fn: Callable[..., Union[Env, RLEnv]] = _make_env_fn,
+        make_env_fn: Callable[..., Union[Env, RLEnv, EnvCustom, RLEnvCustom]] = _make_env_fn,
         workers_ignore_signals: bool = False,
     ) -> Tuple[List[Callable[[], Any]], List[Callable[[Any], None]]]:
         parent_connections, worker_connections = zip(
@@ -533,7 +534,10 @@ class VectorEnvCustom:
 
 
 def construct_envs(
-    config: Config, env_class: Type[Union[Env, RLEnv]], workers_ignore_signals: bool = False, is_train=True
+    config: Config, 
+    env_class: Type[Union[Env, RLEnv, EnvCustom, RLEnvCustom]], 
+    workers_ignore_signals: bool = False, 
+    is_train: bool = True,
 ) -> VectorEnv:
     r"""Create VectorEnv object with specified config and env class type.
     To allow better performance, dataset are split into small ones for
@@ -555,14 +559,13 @@ def construct_envs(
     # num_processes = config.NUM_PROCESSES
     configs = []
     env_classes = [env_class for _ in range(num_processes)]
-    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
-    scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET)
+    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE, is_train=is_train,)
+    scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET, is_train=is_train)
 
     if is_train:
         dataset_split = config.TASK_CONFIG.DATASET.SPLIT 
     else:
-        dataset_split = config.TASK_CONFIG.DATASET.SPLIT 
-
+        dataset_split = config.TASK_CONFIG.DATASET.EVAL_SPLIT 
 
     if (config.EPS_SCENES != []) and dataset_split[:5] == "train":
         scenes = config.EPS_SCENES
@@ -654,8 +657,8 @@ def construct_envs(
 
 
 def make_env_fn(
-    config: Config, env_class: Type[Union[Env, RLEnv]], rank: int, is_train=True,
-) -> Union[Env, RLEnv]:
+    config: Config, env_class: Type[Union[Env, RLEnv, EnvCustom, RLEnvCustom]], rank: int, is_train=True,
+) -> Union[Env, RLEnv, EnvCustom, RLEnvCustom]:
     r"""Creates an env of type env_class with specified config and rank.
     This is to be passed in as an argument when creating VectorEnv.
     Args:
@@ -671,21 +674,28 @@ def make_env_fn(
         logging.basicConfig(level=level, format='%(asctime)s, %(levelname)s: %(message)s',
                             datefmt="%Y-%m-%d %H:%M:%S")
     dataset = make_dataset(
-        config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET
+        config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET,
+        is_train=is_train,
     )
+
+    if is_train:
+        dataset_split = config.TASK_CONFIG.DATASET.SPLIT 
+    else:
+        dataset_split = config.TASK_CONFIG.DATASET.EVAL_SPLIT 
+
     # filter out certain scenes (+ episode IDs) during eval
     if (config.EPS_SCENES != []) and (config.TASK_CONFIG.DATASET.SPLIT[:5] != "train"):
         dataset.filter_by_scenes(config.EPS_SCENES)
     elif (config.EPS_SCENES_N_IDS != []) and (config.TASK_CONFIG.DATASET.SPLIT[:5] != "train"):
         dataset.filter_by_scenes_n_ids(config.EPS_SCENES_N_IDS)
-    env = env_class(config=config, dataset=dataset)
+    env = env_class(config=config, dataset=dataset, is_train=is_train,)
     env.seed(rank)
     return env
 
 
 def make_env_fn_custom(
-    config: Config, env_class: Type[Union[Env, RLEnv]], is_train=True,
-) -> Union[Env, RLEnv]:
+    config: Config, env_class: Type[Union[Env, RLEnv, EnvCustom, RLEnvCustom]], is_train=True,
+) -> Union[Env, RLEnv, EnvCustom, RLEnvCustom]:
     r"""Creates an env of type env_class with specified config and rank.
     This is to be passed in as an argument when creating VectorEnv.
     Args:
@@ -700,11 +710,18 @@ def make_env_fn_custom(
         logging.basicConfig(level=level, format='%(asctime)s, %(levelname)s: %(message)s',
                             datefmt="%Y-%m-%d %H:%M:%S")
     dataset = make_dataset(
-        config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET
+        config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET,
+        is_train=is_train,
     )
+
+    if is_train:
+        dataset_split = config.TASK_CONFIG.DATASET.SPLIT 
+    else:
+        dataset_split = config.TASK_CONFIG.DATASET.EVAL_SPLIT 
+
     if (len(config.EPS_SCENES) != 0) and (config.TASK_CONFIG.DATASET.SPLIT[:5] != "train"):
         dataset.filter_by_scenes(config.EPS_SCENES)
-    env = env_class(config=config, dataset=dataset)
+    env = env_class(config=config, dataset=dataset, is_train=is_train,)
     env.seed(config.SEED)
     return env
 

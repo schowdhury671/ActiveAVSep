@@ -54,7 +54,7 @@ class PPOTrainer(BaseRLTrainer):
         self.actor_critic = None
         self.agent = None
         self.envs = None
-        self.envs_eval = None
+        self.eval_envs = None
         # print("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@self.val_config ", self.val_config)
         if self.config.RL.PPO.use_ddppo:
             interrupted_state = load_interrupted_state()
@@ -119,7 +119,13 @@ class PPOTrainer(BaseRLTrainer):
         self.actor_critic.to(self.device)
         self.actor_critic.train()
 
-    def save_checkpoint(self, file_name: str,) -> None:
+    def save_checkpoint(self, 
+                        file_name: str,
+                        update: int,
+                        count_steps: int,
+                        lr_scheduler_pol,
+                        lr_scheduler_sep,
+                        best_performance=None,) -> None:
         r"""Save checkpoint with specified name.
 
         Args:
@@ -128,10 +134,23 @@ class PPOTrainer(BaseRLTrainer):
         Returns:
             None
         """
+        ppo_cfg = self.config.RL.PPO
+
         checkpoint = {
             "state_dict": self.agent.state_dict(),
             "config": self.config,
+            "optimizer_pol": self.agent.optimizer_pol.state_dict(),
+            "optimizer_sep": self.agent.optimizer_sep.state_dict(),
+            "lr_scheduler_pol": lr_scheduler_pol.state_dict(),
+            "lr_scheduler_sep": lr_scheduler_sep.state_dict(),
+            "last_update": update,
+            "last_count_steps": count_steps,
         }
+
+        if best_performance is not None:
+            checkpoint["best_performance"] = best_performance,
+
+
         torch.save(
             checkpoint, os.path.join(self.config.CHECKPOINT_FOLDER, file_name)
         )
@@ -148,6 +167,43 @@ class PPOTrainer(BaseRLTrainer):
             dict containing checkpoint info
         """
         return torch.load(checkpoint_path, *args, **kwargs)
+
+    def load_activeSeparator_state_dict(self, 
+                                        checkpoint_path: str, 
+                                        lr_scheduler_pol, 
+                                        lr_scheduler_sep,
+                                        just_copy_config=False):
+        """
+        Load active mapper state dictionary
+        :param checkpoint_path: path of target checkpoint
+        :param lr_scheduler_pol: lr scheduler for chat2map active mapper policy
+        :param just_copy_config: flag saying if config to be copied only during the function call or the full state dictionary
+                                is to be read
+        :return: tuple containing starting update and number of steps value for this training if just_copy_config=False,
+                else None
+        """
+        ppo_cfg = self.config.RL.PPO
+
+        ckpt_dict = torch.load(checkpoint_path, map_location="cpu")
+
+        if just_copy_config:
+            self.config = ckpt_dict["config"]
+        else:
+            self.agent.load_state_dict(ckpt_dict["state_dict"])
+            self.agent.optimizer_pol.load_state_dict(ckpt_dict["optimizer_pol"])
+
+            # assert ppo_cfg.agent_type in ["random", "chat2map_activeMapper"]
+            # if ppo_cfg.agent_type == "chat2map_activeMapper":
+            # assert self.agent.optimizer_pol is not None
+            # self.agent.optimizer_pol.load_state_dict(ckpt_dict["optimizer_pol"])
+
+            self.agent.optimizer_sep.load_state_dict(ckpt_dict['optimizer_sep'])
+
+            # assert lr_scheduler_pol is not None
+            lr_scheduler_pol.load_state_dict(ckpt_dict["lr_scheduler_pol"])
+            lr_scheduler_sep.load_state_dict(ckpt_dict["lr_scheduler_sep"])
+
+            return ckpt_dict["last_update"] + 1, ckpt_dict["last_count_steps"]
 
     def _collect_rollout_step(
             self, rollouts_pol, rollouts_sep, current_episode_reward, current_episode_geo_reward, current_episode_step, current_episode_dist_probs,
@@ -906,9 +962,41 @@ class PPOTrainer(BaseRLTrainer):
         Returns:
             None
         """
+
+        count_checkpoints = 0
+        if self.config.RESUME_AFTER_PREEMPTION:
+            old_ckpt_found = False
+            if os.path.isdir(self.config.CHECKPOINT_FOLDER) and (len(os.listdir(self.config.CHECKPOINT_FOLDER)) != 0):
+                lst_ckpt_filenames = os.listdir(self.config.CHECKPOINT_FOLDER)
+
+                ckpt_file_maxIdx = float('-inf')
+                for ckpt_filename in lst_ckpt_filenames:
+                    if (ckpt_filename.split(".")[1] not in ["best_loss_avgAllSteps", "best_loss_lastStep"])\
+                            and (int(ckpt_filename.split(".")[1]) > ckpt_file_maxIdx):  # ["best_reward_avgAllSteps", "best_reward_lastStep"], ["best_monoFromMemLoss_meanOverEpisode"]
+                        ckpt_file_maxIdx = int(ckpt_filename.split(".")[1])
+                most_recent_ckpt_filename = f"ckpt.{ckpt_file_maxIdx}.pth"
+
+                most_recent_ckpt_file_path = os.path.join(self.config.CHECKPOINT_FOLDER,
+                                                          most_recent_ckpt_filename)
+                count_checkpoints = int(most_recent_ckpt_filename.split(".")[1]) + 1
+                old_ckpt_found = True
+
+            old_tb_dir = os.path.join(self.config.MODEL_DIR, "tb")
+            if os.path.isdir(old_tb_dir):
+                for old_tb_idx in range(1, 10000):
+                    if not os.path.isdir(os.path.join(self.config.MODEL_DIR, f"tb_{old_tb_idx}")):
+                        new_tb_dir = os.path.join(self.config.MODEL_DIR, f"tb_{old_tb_idx}")
+                        os.system(f"mv {old_tb_dir} {new_tb_dir}")
+                        break
+
+            if old_ckpt_found:
+                assert os.path.isfile(most_recent_ckpt_file_path)
+
         ppo_cfg = self.config.RL.PPO
         sepExtMem_cfg = ppo_cfg.TRANSFORMER_MEMORY
         poseEnc_cfg = sepExtMem_cfg.POSE_ENCODING
+
+        val_while_training = self.config.VAL_WHILE_TRAINING
 
         if ppo_cfg.use_ddppo:
             self.local_rank, tcp_store = init_distrib_slurm(
@@ -947,7 +1035,10 @@ class PPOTrainer(BaseRLTrainer):
         
         # print("####################ppo_cfg.use_ddppo is ", ppo_cfg.use_ddppo)
         self.envs = construct_envs(
-            self.config, get_env_class(self.config.ENV_NAME), workers_ignore_signals=True if ppo_cfg.use_ddppo else False, is_train=True
+            self.config, 
+            get_env_class(self.config.ENV_NAME), 
+            workers_ignore_signals=True if ppo_cfg.use_ddppo else False, 
+            is_train=True
         )
         print("Train env created")
         
@@ -993,8 +1084,8 @@ class PPOTrainer(BaseRLTrainer):
                     if k in locationPredictor_stateDict:
                         # print("h3")
                         locationPredictor_stateDict[k].copy_(v)
-                    # else:
-                        # print("h4")
+            #         else:
+            #             print("h4")
             # exit()
 
         if ppo_cfg.use_ddppo:
@@ -1077,11 +1168,15 @@ class PPOTrainer(BaseRLTrainer):
         window_episode_monoFromMem_losses_lastStep = deque(maxlen=ppo_cfg.reward_window_size)
         window_episode_monoFromMem_losses_allSteps = deque(maxlen=ppo_cfg.reward_window_size)
 
+        if val_while_training:
+            bestAvg_eval_monoFromMem_losses_lastStep = float('inf')
+            bestAvg_eval_monoFromMem_losses_allSteps = float('inf')
+
         t_start = time.time()
         env_time = 0
         pth_time = 0
         count_steps = 0
-        count_checkpoints = 0
+        # count_checkpoints = 0
 
         lr_scheduler_pol = LambdaLR(
             optimizer=self.agent.optimizer_pol,
@@ -1091,6 +1186,15 @@ class PPOTrainer(BaseRLTrainer):
             optimizer=self.agent.optimizer_sep,
             lr_lambda=lambda x: linear_decay(x, self.config.NUM_UPDATES),
         )
+
+        starting_update = 0
+        if self.config.RESUME_AFTER_PREEMPTION and old_ckpt_found:
+            starting_update, count_steps =\
+                self.load_activeSeparator_state_dict(most_recent_ckpt_file_path,
+                                                     lr_scheduler_pol=lr_scheduler_pol,
+                                                     lr_scheduler_sep=lr_scheduler_sep,
+                                                     just_copy_config=False,
+                                                     )
 
         if ppo_cfg.use_ddppo:
             writer_obj = TensorboardWriter(
@@ -1107,7 +1211,7 @@ class PPOTrainer(BaseRLTrainer):
         best_agg_stats_mean = 10000000.0
 
         with writer_obj as writer:
-            for update in range(int(self.config.NUM_UPDATES)):
+            for update in range(starting_update, int(self.config.NUM_UPDATES)):
                 count_steps_lst = []
                 if ppo_cfg.use_linear_lr_decay:
                     lr_scheduler_pol.step()
@@ -1285,7 +1389,7 @@ class PPOTrainer(BaseRLTrainer):
                         "Environment/Reward", deltas["reward"] / deltas["count"], count_steps
                     )
                     writer.add_scalar(
-                        "Environment/Reward Geodesic", deltas["geo_reward"] / deltas["count"], count_steps
+                        "Environment/Reward_geodesic", deltas["geo_reward"] / deltas["count"], count_steps
                     )
                     logging.debug('Number of steps: {}'.format(deltas["step"] / deltas["count"]))
                     writer.add_scalar(
@@ -1331,8 +1435,9 @@ class PPOTrainer(BaseRLTrainer):
                         'Policy/Learning_Rate', lr_scheduler_pol.get_lr()[0], count_steps
                     )
 
-                    # log stats
-                    if update > 0 and (update % self.config.LOG_INTERVAL == 0):
+                    """ log stats """
+                    if (update > 0) and ((update % self.config.LOG_INTERVAL) == 0):
+                    # if update % self.config.LOG_INTERVAL == 0:
 
                         window_rewards = (
                             window_episode_reward[-1] - window_episode_reward[0]
@@ -1374,7 +1479,9 @@ class PPOTrainer(BaseRLTrainer):
                     distrib.all_reduce(sep_loss_stats.to(self.device))
 
                 if (ppo_cfg.use_ddppo and self.world_rank == 0) or (not ppo_cfg.use_ddppo):
-                    if update > 0 and update % self.config.LOG_INTERVAL == 0:
+                    if (update > 0) and ((update % self.config.LOG_INTERVAL) == 0):
+                    # if update % self.config.LOG_INTERVAL == 0:
+
                         logger.info(
                             "update: {}\tfps: {:.3f}\t".format(
                                 update, count_steps_lst[0] / (time.time() - t_start)
@@ -1389,27 +1496,608 @@ class PPOTrainer(BaseRLTrainer):
                         )
                     
                     if update % self.config.CHECKPOINT_INTERVAL == 0:
-                        if not IS_INTEGRATED_EVAL:
-                            self.save_checkpoint(f"ckpt.{count_checkpoints}.pth")
-                            # self.save_checkpoint(f"latest_ckpt.pth")
-                            count_checkpoints += 1
-                        
-                        else:
-                            self.actor_critic_train = self.actor_critic
-                            self.agent_train = self.agent
+                        if val_while_training:
+                            """ new code """
+                            self.actor_critic.eval()
+                            self.agent.eval()
+                            self.agent.actor_critic.eval()
+
+                            env_cfg = self.config.TASK_CONFIG.ENVIRONMENT
+
+                            eval_num_past_steps_refinement = sepExtMem_cfg.num_past_steps_refinement
+
+                            self.eval_envs = construct_envs(
+                                self.config,
+                                get_env_class(self.config.ENV_NAME),
+                                workers_ignore_signals=False,
+                                is_train=False,
+                            )
+
+                            eval_not_done_masks = torch.ones(
+                                self.eval_envs.num_envs, 1, device=self.device
+                            )
+
+                            # eval_episode_idxs = torch.FloatTensor(list(range(self.eval_envs.num_envs))).to(device=self.device).unsqueeze(-1)
+                            # eval_episode_steps = torch.zeros(self.eval_envs.num_envs, 1, device=self.device)
+                            eval_recurrent_hidden_states_pol = torch.zeros(
+                                self.actor_critic.pol_net.num_recurrent_layers,
+                                self.eval_envs.num_envs,
+                                ppo_cfg.hidden_size,
+                                device=self.device,
+                            )
+                            # eval_prev_actions = torch.zeros(
+                            #     self.eval_envs.num_envs, 1, device=self.device, dtype=torch.long
+                            # )
+                            eval_em = ExternalMemory(
+                                        self.eval_envs.num_envs,
+                                        sepExtMem_cfg.memory_size + ppo_cfg.num_steps,
+                                        sepExtMem_cfg.memory_size,
+                                        512 * 32 + poseEnc_cfg.num_pose_attrs,
+                                        )
+                            eval_em.to(self.device)
+
+                            eval_gtMonoMag_thisEpisode =\
+                                torch.zeros(
+                                    env_cfg.MAX_EPISODE_STEPS,
+                                    self.eval_envs.num_envs,
+                                    *self.eval_envs.observation_spaces[0].spaces["gt_mono_comps"].shape,
+                                ).to(self.device)
+
+                            eval_mixedAudioMag_thisEpisode = []
+                            eval_pred_binSepMasks_thisEpisode = []
+                            eval_gtBinComps_thisEpisode = []
+
+                            eval_mixedAudioMag_thisEpisode_computeQualMetrics = []
+                            eval_mixedAudioPhase_thisEpisode_computeQualMetrics = []
+                            eval_pred_mono_thisEpisode_computeQualMetrics = []
+                            eval_lst_gtMonoMag_thisEpisode_computeQualMetrics = []
+                            eval_lst_gtMonoPhase_thisEpisode_computeQualMetrics = []
+
+                            eval_monoLosses_thisEpisode = []
+                            eval_pred_monoFromMem_computeLosses_thisEpisode = []
+                            eval_gtMono_computeLosses_thisEpisode = []
+
+                            eval_t = tqdm(total=self.config.EVAL.EPISODE_COUNT)
+                            eval_active_envs = list(range(self.eval_envs.num_envs)) # self.envs.num_envs
+
+                            eval_step_count_all_processes = torch.zeros(self.eval_envs.num_envs, 1)
+                            eval_episode_count_all_processes = torch.zeros(self.eval_envs.num_envs, 1)
+                            eval_num_episode_numbers_taken = self.eval_envs.num_envs - 1
+                            for eval_episode_count_idx in range(self.eval_envs.num_envs):
+                                eval_episode_count_all_processes[eval_episode_count_idx] = eval_episode_count_idx
+
+                            #print("@@@@@@@@@@@@@@@@@after episode count idx loop")
+                              
+                            # dict of dicts that stores stats per episode
+                            eval_stats_episodes = dict()
+
+                            eval_mono_losses_last_step = []
+                            eval_mono_losses_all_steps = []
+                            eval_mono_loss_this_episode = 0.
+                            eval_monoFromMem_losses_last_step = []
+                            eval_monoFromMem_losses_all_steps = []
+                            eval_monoFromMem_loss_this_episode = 0.
+
+                            # eval_current_episode_reward = torch.zeros(
+                            #     self.eval_envs.num_envs, 1, device=self.device
+                            # )
+
+                            # eval_rewardPerStep_perSceneEpId = dict()
+                            # eval_stats_episodes = set()
+
+                            # eval_lastReward_perSceneEpId = dict()
+                            # eval_avgReward_perSceneEpId = dict()
+
+                            eval_observations = self.eval_envs.reset()
+                            eval_batch = batch_obs(eval_observations, device=self.device)
+
+                            eval_prev_ep_id = 10000000001
+        
+                            #print("@@@@@@@@@@@@@@@@@after batch_obs ")
+
+                            # looping over episodes
+                            eval_ep_cnt = 0
+
+                            while (
+                                    len(eval_stats_episodes) < self.config.EVAL.EPISODE_COUNT
+                                    and (self.eval_envs.num_envs > 0)
+                            ):
+                                eval_current_episodes = self.eval_envs.current_episodes()
+
+                                eval_current_scene = eval_current_episodes[0].scene_id.split('/')[-2]
+                                eval_current_episode_id = eval_current_episodes[0].episode_id
+
+                                # episode and step count
+                                eval_current_episode_count = int(eval_episode_count_all_processes[0].item())
+
+                                # if eval_step_count_all_processes[0] >= self.config.EVAL.EPISODE_COUNT:
+                                #     eval_step_count_all_processes[0] = 0
+
+                                eval_current_step_count = int(eval_step_count_all_processes[0].item())
+                                
+                                # print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ current_step_count, current_scene, current_episode_id, config.EVAL_EPISODE_COUNT   is   ",current_step_count, current_scene, current_episode_id, config.EVAL_EPISODE_COUNT)
+                                # print("@@@@@@@@@@@@ step_count_all_processes", step_count_all_processes, step_count_all_processes.shape)
+                                # print("@@@@@@@@@@ len(stats_episodes)", len(stats_episodes))
+
+                                if eval_prev_ep_id != eval_current_episode_id:
+                                    eval_prev_ep_id = eval_current_episode_id
+                                    eval_ep_cnt += 1
+                                
+                                # particularly useful for multi-process eval
+                                # hack to not collect stats from environments which have finished
+                                # print("@@@@@@@@@@@@@@@@@@@\n\n current episodes len ", len(current_episodes))
+                                
+                                eval_active_envs_tmp = []
+                                for eval_env_idx in eval_active_envs:
+                                    if eval_env_idx > 0:
+                                        raise NotImplementedError
+                                    if (eval_current_episodes[eval_env_idx].scene_id.split('/')[-2], eval_current_episodes[eval_env_idx].episode_id) not in eval_stats_episodes:
+                                        eval_active_envs_tmp.append(eval_env_idx)
+                                eval_active_envs = eval_active_envs_tmp
+
+                                with torch.no_grad():
+                                    eval_step_observation = eval_batch
+
+                                    """get actions"""
+                                    # if ppo_cfg.agent_type == "random":
+                                    #     eval_actions = []
+                                    #     for eval_batch_idx, eval_episode_step in enumerate(eval_episode_steps):
+                                    #         eval_ep_idx = int(eval_current_episodes[eval_batch_idx].episode_id) - 1
+                                    #         eval_episode_step_ = int(eval_episode_step[0].item())
+
+                                    #         current_action_slice =\
+                                    #             random_pol_oneHot_view_dist[eval_ep_idx][eval_episode_step_ * num_agents:
+                                    #                                                      (eval_episode_step_ + 1) * num_agents].tolist()
+                                    #         if current_action_slice == [0, 0]:
+                                    #             eval_actions.append([0])
+                                    #         elif current_action_slice == [1, 0]:
+                                    #             eval_actions.append([1])
+                                    #         elif current_action_slice == [0, 1]:
+                                    #             eval_actions.append([2])
+                                    #         elif current_action_slice == [1, 1]:
+                                    #             eval_actions.append([3])
+                                    #         else:
+                                    #             raise ValueError
+
+                                    #     eval_actions = torch.tensor(eval_actions, dtype=torch.uint8).to(self.device)
+                                    # else:
+
+
+                                    eval_pred_binSepMasks =\
+                                        self.actor_critic.get_binSepMasks(
+                                            eval_batch
+                                        )
+                                    eval_pred_mono =\
+                                        self.actor_critic.convert_bin2mono(eval_pred_binSepMasks.detach(),
+                                                                           mixed_audio=eval_batch["mixed_bin_audio_mag"],
+                                                                           )
+                                    #try:
+                                    if eval_current_step_count >= 20:
+                                        pass # break
+
+                                    eval_gtMonoMag_thisEpisode[eval_current_step_count].copy_(eval_batch["gt_mono_comps"])
+                                    #except:
+                                    #print("@@@@@@@@@@@@@@@@@@current_step_count is ", current_step_count)
+                                    #print(abcd)
+                                    
+                                    
+                                    eval_sepExtMem_mono = eval_em.memory[:, 0]
+                                    eval_sepExtMem_masks = eval_em.masks
+                                    eval_sepExtMem_skipFeats = eval_em.memory_skipFeats[:, 0]
+                                    
+                                    eval_pred_monoFromMem, eval_pred_mono_toCache, eval_pred_monoFromMem_aftrAtt_feats, eval_skip_feats =\
+                                        self.actor_critic.get_monoFromMem(pred_mono=eval_pred_mono,
+                                                                          sepExtMem_mono=eval_sepExtMem_mono,
+                                                                          sepExtMem_masks=eval_sepExtMem_masks,
+                                                                          pose=eval_batch["pose"],
+                                                                          sepExtMem_skipFeats=eval_sepExtMem_skipFeats,
+                                                                          )
+                                                                        
+                                                                        
+                                    #print("@@@@@@@@@@@@@@@@@after get mono from mem function call ")                                      
+
+                                    eval_sepExtMem_masks_wCurrStep = torch.cat([eval_sepExtMem_masks,
+                                                                                torch.ones([eval_sepExtMem_masks.shape[0], 1],
+                                                                                            device=eval_sepExtMem_masks.device)],
+                                                                                dim=1)
+
+                                    # find out indexes to set num_past_steps_refinement steps to True
+                                    eval_bs, eval_M = eval_sepExtMem_masks_wCurrStep.size()
+                                    eval_newest_sepExtMem_masks_wCurrStep = eval_sepExtMem_masks_wCurrStep[:, -1:].clone()
+                                    eval_old_sepExtMem_masks_wCurrStep = eval_sepExtMem_masks_wCurrStep[:, :-1].clone()
+                                    eval_old_activeIdxs_sepExtMem_masks_wCurrStep = torch.where(eval_old_sepExtMem_masks_wCurrStep == 1.0)
+                                    eval_old_sepExtMem_masks_wCurrStep[:, :] = 0.0
+                                    if eval_old_activeIdxs_sepExtMem_masks_wCurrStep[0].size()[0] != 0:
+                                        eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep =\
+                                            eval_old_activeIdxs_sepExtMem_masks_wCurrStep[1].view(eval_bs, -1)[0]
+
+                                        # hacky and slow way to find out which idxs to choose for num_past_steps_refinement
+                                        eval_active_old_col = -1
+                                        eval_wrap_around_in_mem = False
+                                        for eval_active_col in eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep:
+                                            if eval_active_old_col != -1:
+                                                if eval_active_old_col != (eval_active_col.item() - 1):
+                                                    eval_wrap_around_in_mem = True
+                                                    break
+                                            eval_active_old_col = eval_active_col.item()
+                                            
+                                        #print("@@@@@@@@@@@@@@@@@after for loop on old_activeColsFirstProcess_sepExtMem_masks_wCurrStep ")    
+
+                                        if eval_wrap_around_in_mem:
+                                            eval_last_active_col_left = eval_active_old_col
+                                            eval_first_active_col_left = 0
+                                            eval_last_active_col_right = eval_old_sepExtMem_masks_wCurrStep.size(1) - 1
+                                            assert eval_old_sepExtMem_masks_wCurrStep.size(1) - 1\
+                                                == eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep[-1].item()
+                                            if eval_last_active_col_left - eval_first_active_col_left + 1 >= eval_num_past_steps_refinement:
+                                                eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep =\
+                                                    list(range(eval_last_active_col_left - eval_num_past_steps_refinement + 1,
+                                                            eval_last_active_col_left + 1))
+                                                assert len(eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep)\
+                                                    == eval_num_past_steps_refinement
+                                                eval_old_activeCols_sepExtMem_masks_wCurrStep =\
+                                                    torch.LongTensor(eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(0)\
+                                                        .repeat(eval_bs, 1).contiguous().view(-1)
+
+                                                eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep = list(range(eval_bs))
+                                                eval_old_activeRows_sepExtMem_masks_wCurrStep =\
+                                                    torch.LongTensor(eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(1)\
+                                                        .repeat(1, eval_num_past_steps_refinement).contiguous().view(-1)
+                                            else:
+                                            
+                                                #ppo_cfg.self_attn_n_seq_mem_cfg.k_old_steps = ppo_cfg.TRANSFORMER_MEMORY.num_past_steps_refinement
+                                                
+                                                #print("\n\n@@@@@@@@@@@@@@@@@@@@@ ppo_cfg ", ppo_cfg)
+                                                
+                                                if eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep.size(0)\
+                                                        >= eval_num_past_steps_refinement:
+                                                    eval_remaining_numPastStepsRefinement_toBeSampledFromRight =\
+                                                        ppo_cfg.TRANSFORMER_MEMORY.num_past_steps_refinement -\
+                                                        (last_active_col_left - first_active_col_left + 1)
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromLeft\
+                                                        = list(range(0, eval_last_active_col_left + 1))
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromRight =\
+                                                        list(range(eval_last_active_col_right - eval_remaining_numPastStepsRefinement_toBeSampledFromRight + 1,
+                                                                eval_last_active_col_right + 1))
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep\
+                                                        = eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromRight +\
+                                                        eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromLeft
+                                                    assert len(eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep)\
+                                                        == eval_num_past_steps_refinement
+                                                    eval_old_activeCols_sepExtMem_masks_wCurrStep =\
+                                                        torch.LongTensor(eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(0)\
+                                                            .repeat(eval_bs, 1).contiguous().view(-1)
+
+                                                    eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep = list(range(eval_bs))
+                                                    eval_old_activeRows_sepExtMem_masks_wCurrStep =\
+                                                        torch.LongTensor(eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(1)\
+                                                            .repeat(1, eval_num_past_steps_refinement).contiguous().view(-1)
+                                                else:
+                                                    eval_remaining_numPastStepsRefinement_toBeSampledFromRight =\
+                                                        eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep.size(0) -\
+                                                        (eval_last_active_col_left - eval_first_active_col_left + 1)
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromLeft\
+                                                        = list(range(0, eval_last_active_col_left + 1))
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromRight =\
+                                                        list(range(eval_last_active_col_right - eval_remaining_numPastStepsRefinement_toBeSampledFromRight + 1,
+                                                                eval_last_active_col_right + 1))
+                                                    eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep\
+                                                        = leval_st_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromRight +\
+                                                        eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep_sampledFromLeft
+                                                    eval_old_activeCols_sepExtMem_masks_wCurrStep =\
+                                                        torch.LongTensor(eval_lst_old_activeColsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(0)\
+                                                            .repeat(eval_bs, 1).contiguous().view(-1)
+
+                                                    eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep = list(range(eval_bs))
+                                                    eval_old_activeRows_sepExtMem_masks_wCurrStep =\
+                                                        torch.LongTensor(eval_lst_old_activeRowsOneProcess_sepExtMem_masks_wCurrStep).unsqueeze(1)\
+                                                            .repeat(1, eval_old_activeColsFirstProcess_sepExtMem_masks_wCurrStep.size(0)).contiguous().view(-1)
+                                        else:
+                                            eval_old_activeRows_sepExtMem_masks_wCurrStep =\
+                                                eval_old_activeIdxs_sepExtMem_masks_wCurrStep[0].view(eval_bs, -1)[:, -eval_num_past_steps_refinement:]\
+                                                    .contiguous().view(-1)
+                                            eval_old_activeCols_sepExtMem_masks_wCurrStep =\
+                                                eval_old_activeIdxs_sepExtMem_masks_wCurrStep[1].view(eval_bs, -1)[:, -eval_num_past_steps_refinement:]\
+                                                    .contiguous().view(-1)
+
+                                        eval_old_sepExtMem_masks_wCurrStep[eval_old_activeRows_sepExtMem_masks_wCurrStep,
+                                                                            eval_old_activeCols_sepExtMem_masks_wCurrStep] = 1.0
+                                        eval_old_sepExtMem_masks_wCurrStep = eval_old_sepExtMem_masks_wCurrStep.contiguous().view(eval_bs, -1)
+
+                                    eval_sepExtMem_masks_wCurrStep = torch.cat((eval_old_sepExtMem_masks_wCurrStep,
+                                                                                eval_newest_sepExtMem_masks_wCurrStep), dim=1)
+
+                                    eval_valid_prediction_idxs = torch.where(eval_sepExtMem_masks_wCurrStep == 1.0)
+
+                                    # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+                                    # reward if there is a wraparound the memory to avoid bug
+                                    eval_valid_prediction_cols = eval_valid_prediction_idxs[1]
+                                    eval_bs, eval_M = eval_sepExtMem_masks_wCurrStep.size()
+                                    eval_valid_prediction_cols = eval_valid_prediction_cols.contiguous().view(eval_bs, -1)
+
+                                    eval_active_old_col = -1
+                                    eval_active_old_col_idx = 0
+                                    eval_wrap_around_in_mem = False
+                                    for eval_active_col in eval_valid_prediction_cols[0][:-1]:
+                                        if eval_active_old_col != -1:
+                                            if eval_active_old_col != (eval_active_col.item() - 1):
+                                                eval_wrap_around_in_mem = True
+                                                break
+                                        eval_active_old_col = eval_active_col.item()
+                                        eval_active_old_col_idx += 1
+                                    if eval_wrap_around_in_mem:
+                                        eval_valid_prediction_cols_toComputeLosses =\
+                                            torch.cat((eval_valid_prediction_cols[:, :-1][:, eval_active_old_col_idx:],
+                                                    eval_valid_prediction_cols[:, :-1][:, :eval_active_old_col_idx],
+                                                    eval_valid_prediction_cols[:, -1:]), dim=1)
+                                    else:
+                                        eval_valid_prediction_cols_toComputeLosses = eval_valid_prediction_cols.clone()
+                                    eval_valid_prediction_idxs_toComputeLosses = (eval_valid_prediction_idxs[0].clone(),
+                                                                            eval_valid_prediction_cols_toComputeLosses.view(-1).contiguous())
+
+                                    # current step tensor manipulations for loss computation
+                                    eval_gt_mono_mag_toComputeLosses =\
+                                        eval_gtMonoMag_thisEpisode[max(0, eval_current_step_count + 1 - (eval_num_past_steps_refinement + 1)):
+                                                            eval_current_step_count + 1][..., 0::2].clone()[..., 0].unsqueeze(-1).permute(1, 0, 2, 3, 4)
+                                    eval_gt_mono_mag_toComputeLosses =\
+                                        eval_gt_mono_mag_toComputeLosses.contiguous()\
+                                            .view(eval_gt_mono_mag_toComputeLosses.size(0) * eval_gt_mono_mag_toComputeLosses.size(1),
+                                                *eval_gt_mono_mag_toComputeLosses.size()[2:])
+
+                                    eval_gt_mono_phase_toComputeLosses =\
+                                        eval_gtMonoMag_thisEpisode[max(0, eval_current_step_count + 1 - (eval_num_past_steps_refinement + 1)):
+                                                            eval_current_step_count + 1][..., 1::2].clone()[..., 0].unsqueeze(-1).permute(1, 0, 2, 3, 4)
+                                    eval_gt_mono_phase_toComputeLosses =\
+                                        eval_gt_mono_phase_toComputeLosses.contiguous()\
+                                            .view(eval_gt_mono_phase_toComputeLosses.size(0) * eval_gt_mono_phase_toComputeLosses.size(1),
+                                                *eval_gt_mono_phase_toComputeLosses.size()[2:])
+
+                                    # pred_monoFromMem_toComputeLosses after this step: [B, mem_size (cfg_mem_size + ppo_cfg_num_steps) + 1, 512, 32, 1]
+                                    eval_pred_monoFromMem_toComputeLosses = eval_pred_monoFromMem.permute(1, 0, 2, 3, 4)
+
+                                    # needed for mem_size == cfg_mem_size + ppo_cfg_num_steps... need to rotate the cols for computing
+                                    # reward if there is a wraparound the memory to avoid bug
+                                    eval_pred_monoFromMem_toComputeLosses = eval_pred_monoFromMem_toComputeLosses[eval_valid_prediction_idxs_toComputeLosses[0],
+                                                                                                        eval_valid_prediction_idxs_toComputeLosses[1]]
+
+                                    if eval_current_step_count >= eval_num_past_steps_refinement:
+                                        if eval_current_step_count == (env_cfg.MAX_EPISODE_STEPS - 1):
+                                            for eval_stepIdx_pastStepsRefine in range(torch.cat((eval_gt_mono_mag_toComputeLosses,
+                                                                                            eval_gt_mono_phase_toComputeLosses),
+                                                                                        dim=-1).size(0)):
+                                                eval_pred_monoFromMem_computeLosses_thisEpisode.append(
+                                                    eval_pred_monoFromMem_toComputeLosses[eval_stepIdx_pastStepsRefine].unsqueeze(0)
+                                                )
+                                                eval_gtMono_computeLosses_thisEpisode.append(torch.cat((eval_gt_mono_mag_toComputeLosses,
+                                                                                                        eval_gt_mono_phase_toComputeLosses),
+                                                                                                       dim=-1)[eval_stepIdx_pastStepsRefine].clone().unsqueeze(0))
+                                        else:
+                                            eval_pred_monoFromMem_computeLosses_thisEpisode.append(eval_pred_monoFromMem_toComputeLosses[:1])
+                                            eval_gtMono_computeLosses_thisEpisode.append(
+                                                torch.cat((eval_gt_mono_mag_toComputeLosses[:1],
+                                                           eval_gt_mono_phase_toComputeLosses[:1]),
+                                                          dim=-1).clone()
+                                            )
+
+                                    eval_gt_mono_mag = eval_batch["gt_mono_comps"][:, :, :, 0::2].clone()[:, :, :, 0].unsqueeze(-1)
+                                    eval_gt_mono_phase = eval_batch["gt_mono_comps"][:, :, :, 1::2].clone()[:, :, :, 0].unsqueeze(-1)
+
+                                    # raise NotImplementedError
+                                    (
+                                        _,
+                                        eval_actions,
+                                        _,
+                                        eval_recurrent_hidden_states_pol,
+                                        eval_distribution_probs,
+                                    ) = self.actor_critic.act(
+                                            eval_step_observation,
+                                            eval_recurrent_hidden_states_pol,
+                                            eval_not_done_masks,
+                                            eval_pred_monoFromMem[-1],
+                                            eval_pred_binSepMasks,
+                                            deterministic=ppo_cfg.deterministic_eval,
+                                        )
+
+                                eval_outputs = self.eval_envs.step([a[0].item() for a in eval_actions])
+
+                                # eval_prev_actions = eval_actions - 1
+
+                                eval_observations, eval_rewards, eval_dones, eval_infos = [
+                                    list(x) for x in zip(*eval_outputs)
+                                ]
+                                # print("trnr 1: ", eval_dones, eval_step_count_all_processes, eval_current_step_count)
+
+                                # """inserting observations for current step into rollouts_mapper"""
+                                # eval_mapper_batch =\
+                                #     self.insert_batch_rollouts_mapper(
+                                #         rollouts_mapper,
+                                #         eval_batch,
+                                #         eval_actions,
+                                #         None,
+                                #         eval_dones,
+                                #         eval_=True
+                                #     )
+
+                                eval_not_done_masks = torch.tensor(
+                                    [[0.0] if done else [1.0] for done in eval_dones],
+                                    dtype=torch.float,
+                                    device=self.device,
+                                )
+
+                                # eval_mapper_step_observation, eval_query_maps_gt, eval_query_maps_exploredMasks =\
+                                #     self.build_mapper_step_observation(
+                                #         eval_mapper_batch,
+                                #     )
+
+                                # with torch.no_grad():
+                                #     eval_preds = self.actor_critic.mapper_forward(eval_mapper_step_observation).detach()
+
+                                # """ getting rewards """
+                                # eval_rewards = self.override_rewards(
+                                #     preds=eval_preds,
+                                #     query_views_mask=eval_mapper_step_observation["query_views_mask"],
+                                #     query_maps_gt=eval_query_maps_gt,
+                                #     query_maps_exploredMasks=eval_query_maps_exploredMasks,
+                                # )
+
+                                eval_em.insert(eval_pred_mono_toCache,
+                                               eval_skip_feats,
+                                               eval_batch["gt_mono_comps"][:, :, :, 0].unsqueeze(-1),
+                                               eval_not_done_masks)
+
+                                eval_done = eval_dones[0]
+
+                                eval_mixedAudioMag_thisEpisode.append(eval_batch["mixed_bin_audio_mag"])
+                                eval_pred_binSepMasks_thisEpisode.append(eval_pred_binSepMasks.detach())
+                                eval_gtBinComps_thisEpisode.append(eval_batch["gt_bin_comps"].clone())
+
+                                # last step
+                                if eval_current_step_count == (env_cfg.MAX_EPISODE_STEPS - 1):
+                                    assert eval_done
+                                    eval_monoFromMem_losses_thisEpisode = []
+                                    for eval_stepIdx_computeLoss in range(env_cfg.MAX_EPISODE_STEPS):
+                                        _, eval_monoFromMem_losses =\
+                                            STFT_L2_distance(eval_mixedAudioMag_thisEpisode[eval_stepIdx_computeLoss],
+                                                             eval_pred_binSepMasks_thisEpisode[eval_stepIdx_computeLoss],
+                                                             eval_gtBinComps_thisEpisode[eval_stepIdx_computeLoss],
+                                                             eval_pred_monoFromMem_computeLosses_thisEpisode[eval_stepIdx_computeLoss],
+                                                             eval_gtMono_computeLosses_thisEpisode[eval_stepIdx_computeLoss],
+                                                            )
+                                        eval_monoFromMem_loss_this_episode += eval_monoFromMem_losses[0][0].item()
+
+                                        eval_monoFromMem_losses_thisEpisode.append(eval_monoFromMem_losses[0][0].item())
+
+                                    eval_mixedAudioMag_thisEpisode = []
+                                    eval_pred_binSepMasks_thisEpisode = []
+                                    eval_gtBinComps_thisEpisode = []
+
+                                eval_batch = batch_obs(eval_observations, self.device)
+                                eval_step_count_all_processes += 1
+                                eval_next_episodes = self.eval_envs.current_episodes()
+                                eval_next_scene = eval_next_episodes[0].scene_id.split('/')[-2]
+                                eval_next_episode_id = eval_next_episodes[0].episode_id
+
+                                # particularly useful for multi-process eval
+                                for eval_env_idx in eval_active_envs:
+                                    if eval_env_idx > 0:
+                                        raise NotImplementedError
+
+                                    # episode has ended
+                                    if eval_not_done_masks[eval_env_idx].item() == 0:
+                                        assert eval_current_step_count == (env_cfg.MAX_EPISODE_STEPS - 1), print(eval_current_step_count)
+
+                                        eval_em.reset(self.device)
+                                        eval_gtMonoMag_thisEpisode = torch.zeros(
+                                                                            env_cfg.MAX_EPISODE_STEPS,
+                                                                            self.eval_envs.num_envs,
+                                                                            *self.eval_envs.observation_spaces[0].spaces["gt_mono_comps"].shape,
+                                                                        ).to(self.device)
+
+                                        eval_monoLosses_thisEpisode = []
+                                        eval_pred_monoFromMem_computeLosses_thisEpisode = []
+                                        eval_gtMono_computeLosses_thisEpisode = []
+
+                                        # stats of simulator-returned performance metrics
+                                        eval_episode_stats = dict()
+
+                                        # use scene + episode_id as unique id for storing stats
+                                        assert (eval_current_scene, eval_current_episode_id) not in eval_stats_episodes
+                                        # try:
+                                        eval_stats_episodes[(eval_current_scene, eval_current_episode_id)] = eval_episode_stats
+                                            # print("&&&&&&&&&&&&&&&&&&& here len(stats_episodes)", len(stats_episodes))
+                                        # except:
+                                        #     pass
+
+                                        eval_monoFromMem_losses_last_step.append(eval_monoFromMem_losses[eval_env_idx][0].item())
+                                        eval_monoFromMem_losses_all_steps.append(eval_monoFromMem_loss_this_episode / eval_step_count_all_processes[eval_env_idx].item())
+                                        eval_monoFromMem_loss_this_episode = 0.
+
+                                        # update tqdm object
+                                        eval_t.update()
+
+                                        # particularly useful for multi-process eval
+                                        if (eval_next_scene, eval_next_episode_id) not in eval_stats_episodes:
+                                            eval_episode_count_all_processes[eval_env_idx] = eval_num_episode_numbers_taken + 1
+                                            eval_num_episode_numbers_taken += 1
+                                            eval_step_count_all_processes[eval_env_idx] = 0
+                                            # print("&&&&&&&&&&&&&&&&&&& reset len(eval_stats_episodes), eval_step_count_all_processes[eval_env_idx])", 
+                                            #       len(eval_stats_episodes), 
+                                            #       eval_step_count_all_processes[eval_env_idx])
+                                        else: # hard-reset
+                                            eval_episode_count_all_processes[eval_env_idx] = eval_num_episode_numbers_taken + 1
+                                            eval_num_episode_numbers_taken += 1
+                                            eval_step_count_all_processes[eval_env_idx] = 0
+                                            # print("&&&&&&&&&&&&&&&&&&& HARD reset len(eval_stats_episodes), eval_step_count_all_processes[eval_env_idx])", 
+                                            #       len(eval_stats_episodes), 
+                                            #       eval_step_count_all_processes[eval_env_idx])
+
+                                    # if step_count_all_processes[env_idx] > config.EVAL_EPISODE_COUNT - 1: # hard-reset
+                                    #     episode_count_all_processes[env_idx] = num_episode_numbers_taken + 1
+                                    #     num_episode_numbers_taken += 1
+                                    #     step_count_all_processes[env_idx] = 0
+                                    #     print("&&&&&&&&&&&&&&&&&&& HARD reset 2 len(stats_episodes), step_count_all_processes[env_idx])", len(stats_episodes), step_count_all_processes[env_idx])
+
                             
-                            agg_stats_mean = self.eval(1, -1, separate_eval=False)
-                            if agg_stats_mean < best_agg_stats_mean:
-                                best_agg_stats_mean = agg_stats_mean
-                                self.save_checkpoint(f"best_ckpt.pth")
-                                # self.save_checkpoint(f"ckpt.{count_checkpoints}.pth")
-                                count_checkpoints += 1
-                            
-                            self.actor_critic = self.actor_critic_train
-                            self.agent = self.agent_train
+                            # else:
+                            #     # print('Exception')
+                            #     break
+
+                            """ closing the open environments after iterating over all episodes """
+                            self.eval_envs.close()
+
+                            avg_eval_monoFromMem_losses_lastStep = np.mean(eval_monoFromMem_losses_last_step)
+                            writer.add_scalar(
+                                f"Environment/val_STFT_L2_loss/monoFromMem_lastStep", 
+                                avg_eval_monoFromMem_losses_lastStep, 
+                                update,
+                            )
+                            if avg_eval_monoFromMem_losses_lastStep < bestAvg_eval_monoFromMem_losses_lastStep:
+                                bestAvg_eval_monoFromMem_losses_lastStep = avg_eval_monoFromMem_losses_lastStep
+                                self.save_checkpoint(f"ckpt.best_loss_lastStep.pth",
+                                                     update,
+                                                     count_steps,
+                                                     lr_scheduler_pol=lr_scheduler_pol,
+                                                     lr_scheduler_sep=lr_scheduler_sep,
+                                                     best_performance=bestAvg_eval_monoFromMem_losses_lastStep,
+                                                     )
+
+                            avg_eval_monoFromMem_losses_allSteps = np.mean(eval_monoFromMem_losses_all_steps)
+                            writer.add_scalar(
+                                f"Environment/val_STFT_L2_loss/monoFromMem_avgAllSteps", 
+                                avg_eval_monoFromMem_losses_allSteps, 
+                                update
+                            )
+                            if avg_eval_monoFromMem_losses_allSteps < bestAvg_eval_monoFromMem_losses_allSteps:
+                                bestAvg_eval_monoFromMem_losses_allSteps = avg_eval_monoFromMem_losses_allSteps
+                                self.save_checkpoint(f"ckpt.best_loss_avgAllSteps.pth",
+                                                     update,
+                                                     count_steps,
+                                                     lr_scheduler_pol=lr_scheduler_pol,
+                                                     lr_scheduler_sep=lr_scheduler_sep,
+                                                     best_performance=bestAvg_eval_monoFromMem_losses_allSteps,
+                                                     )
+
                             self.actor_critic.train()
                             self.agent.train()
                             self.agent.actor_critic.train()
+
+                        self.save_checkpoint(f"ckpt.{count_checkpoints}.pth",
+                                             update,
+                                             count_steps,
+                                             lr_scheduler_pol=lr_scheduler_pol,
+                                             lr_scheduler_sep=lr_scheduler_sep,
+                                             )
+                        if os.path.isfile(f"{self.config.CHECKPOINT_FOLDER}/ckpt.{count_checkpoints - 1}.pth"):
+                            os.system(f"rm {self.config.CHECKPOINT_FOLDER}/ckpt.{count_checkpoints - 1}.pth")
+
+                        count_checkpoints += 1 
+                        
+                        """ old code """
+                        # else:
+
+                        #     self.save_checkpoint(f"ckpt.{count_checkpoints}.pth")
+                        #     # self.save_checkpoint(f"latest_ckpt.pth")
+                        #     count_checkpoints += 1
 
                 
 
@@ -1492,7 +2180,7 @@ class PPOTrainer(BaseRLTrainer):
         env_cfg = config.TASK_CONFIG.ENVIRONMENT
 
         # setting up envs
-        self.envs_eval = construct_envs(
+        self.eval_envs = construct_envs(
             config, get_env_class(config.ENV_NAME), is_train=False
         )
         print("Eval env created")
@@ -1538,7 +2226,7 @@ class PPOTrainer(BaseRLTrainer):
         gtMonoMag_thisEpisode = torch.zeros(
             env_cfg.MAX_EPISODE_STEPS,
             config.NUM_PROCESSES,
-            *self.envs_eval.observation_spaces[0].spaces["gt_mono_comps"].shape,
+            *self.eval_envs.observation_spaces[0].spaces["gt_mono_comps"].shape,
         ).to(self.device)
         
         #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@after gtMonoMag_thisEpisode ")
@@ -1558,7 +2246,7 @@ class PPOTrainer(BaseRLTrainer):
         gtMono_computeLosses_thisEpisode = []
 
         t = tqdm(total=config.EVAL_EPISODE_COUNT)
-        active_envs = list(range(self.envs_eval.num_envs)) # self.envs.num_envs
+        active_envs = list(range(self.eval_envs.num_envs)) # self.envs.num_envs
 
 
 
@@ -1601,7 +2289,7 @@ class PPOTrainer(BaseRLTrainer):
         
         # resetting environments for 1st step of eval
         
-        observations = self.envs_eval.reset()   # fix error in this call
+        observations = self.eval_envs.reset()   # fix error in this call
         #print("@@@@@@@@@@@@@@@@@@@@@@@@@@after envs.reset line")
         batch = batch_obs(observations, self.device)
 
@@ -1614,10 +2302,10 @@ class PPOTrainer(BaseRLTrainer):
         # len(stats_episodes) < config.EVAL_EPISODE_COUNT
         while (
             ep_cnt < config.EVAL_EPISODE_COUNT
-            and self.envs_eval.num_envs > 0
+            and self.eval_envs.num_envs > 0
         ):  
             if True:
-                current_episodes = self.envs_eval.current_episodes()
+                current_episodes = self.eval_envs.current_episodes()
                 #print("@@@@@@@@@@@@@@@@@after envs.current.episodes ")
 
                 ### ALL CODE HERE ONWARDS ASSUME 1-PROCESS EVAL
@@ -1888,7 +2576,7 @@ class PPOTrainer(BaseRLTrainer):
                             deterministic=ppo_cfg.deterministic_eval,
                         )
 
-                outputs = self.envs_eval.step([a[0].item() for a in actions])
+                outputs = self.eval_envs.step([a[0].item() for a in actions])
 
                 observations, rewards, dones, infos = [
                     list(x) for x in zip(*outputs)
@@ -2002,7 +2690,7 @@ class PPOTrainer(BaseRLTrainer):
                 # batch being re-assigned here because current batch used in the computation of eval metrics
                 batch = batch_obs(observations, self.device)
                 step_count_all_processes += 1
-                next_episodes = self.envs_eval.current_episodes()
+                next_episodes = self.eval_envs.current_episodes()
                 next_scene = next_episodes[0].scene_id.split('/')[-2]
                 next_episode_id = next_episodes[0].episode_id
 
@@ -2017,7 +2705,7 @@ class PPOTrainer(BaseRLTrainer):
                         gtMonoMag_thisEpisode = torch.zeros(
                             env_cfg.MAX_EPISODE_STEPS,
                             config.NUM_PROCESSES,
-                            *self.envs_eval.observation_spaces[0].spaces["gt_mono_comps"].shape,
+                            *self.eval_envs.observation_spaces[0].spaces["gt_mono_comps"].shape,
                             ).to(self.device)
 
                         monoLosses_thisEpisode = []
@@ -2070,7 +2758,7 @@ class PPOTrainer(BaseRLTrainer):
             #     break
 
         # closing the open environments after iterating over all episodes
-        self.envs_eval.close()
+        self.eval_envs.close()
 
         # mean and std of simulator-returned metrics and STFT L2 losses
         aggregated_stats = dict()
@@ -2130,3 +2818,4 @@ class PPOTrainer(BaseRLTrainer):
         # self.agent.actor_critic.train()
         
         return aggregated_stats["mono_loss_all_steps"]["mean"]
+        

@@ -3,6 +3,7 @@ import json
 
 
 import os
+from tqdm import tqdm
 import pickle
 import numpy as np
 import torch
@@ -247,6 +248,7 @@ class SubGraph_sampling():
         actions_list, corrected_path = self.collect_actions(s_graph, path)
       else:
         path = []
+        # corrected_path = []
         actions_list = [self.actions_dict['STOP']]
       existing_destinations[dest_node] = 1
       sampled_list += [{'start':start_node, 'target':dest_node, 'graph':s_graph, 'path':corrected_path, 'actions_list':actions_list}]
@@ -254,23 +256,54 @@ class SubGraph_sampling():
     return sampled_list, node_to_point_dict
 
 
-'''
+ROOT_DR = "/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data"
+assert os.path.isdir(ROOT_DR)
+
+DATASETS_DR = f"{ROOT_DR}/active_datasets/v1"
+assert os.path.isdir(DATASETS_DR)
+
+
+SOURCE_DRN = "train_731243episodes/content"
+DUMP_DRN = "train_movingSource_731243episodes/content"   # train_movingSource_731243episodes, train_movingSource_731243episodes_20episodesPerScene
+
+# SOURCE_DRN = "val_100episodes"
+# DUMP_DRN = "val_movingSource_100episodes"
+
+# SOURCE_DRN = "valUnheard_100episodes"
+# DUMP_DRN = "valUnheard_movingSource_100episodes"
+
+# SOURCE_DRN = "test_1000episodes"
+# DUMP_DRN = "test_movingSource_1000episodes"
+
+# SOURCE_DRN = "testUnheard_1000episodes"
+# DUMP_DRN = "testUnheard_movingSource_1000episodes"
+
+
+
 ####################################  first step is for modifying the scene json files with new key in the dict
+# '''
 
-directory = "./content/"
+# directory = "./content/"
+directory = f"{DATASETS_DR}/{SOURCE_DRN}"
 
+dump_directory = f"{DATASETS_DR}/{DUMP_DRN}"
+if not os.path.isdir(dump_directory):
+    os.makedirs(dump_directory)
 
-for filename in os.listdir(directory):
+for filename in tqdm(os.listdir(directory)[:]):    # :, 2
     file_path = os.path.join(directory, filename)
+    
+    if os.path.isdir(file_path):
+        continue
     
     with gzip.open(file_path, "rb") as f:
       scene = json.loads(f.read(), encoding="utf-8")
       
       list_episodes = scene['episodes']
       
-      for i in range(len(list_episodes)):
+      for i in tqdm(range(len(list_episodes[:]))):   # :, 2, 20
        
-        parent_folder = '/fs/nexus-projects/ego_data/active_avsep/sound-spaces/data/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
+        parent_folder = f'{ROOT_DR}/metadata/mp3d/' + scene['episodes'][0]['scene_id'].split("/")[0]
         points,graph = load_points_data(parent_folder, 'graph.pkl', scene_dataset="mp3d")
         
         start_point = list_episodes[i]['start_position']
@@ -289,25 +322,35 @@ for filename in os.listdir(directory):
             break
         
         sampled_pts, node_to_point_dict = SubGraph_sampling(points_to_sample=1).execute(graph, start_node)
+        # print("1: ", type(sampled_pts[0]['path'][-1]))
         list_episodes[i]['moving_source_positions'] = sampled_pts[0]['path']
-    
-    # write to .gz file
-    # Convert data to JSON
-    json_str = json.dumps(list_episodes, default=str)
 
-    # Write JSON to .gz file
-    print("writing file path ", file_path)
-    with gzip.GzipFile(file_path, 'w') as fout:
+      list_episodes_ = []
+      for ele in list_episodes:
+        if 'moving_source_positions' in ele:
+          list_episodes_.append(ele)
+      list_episodes = list_episodes_
+    
+    """ write to .gz file """
+    """ Convert data to JSON """
+    # json_str = json.dumps(list_episodes, default=str)
+    json_str = json.dumps({'episodes': list_episodes}, default=str)
+
+    """ Write JSON to .gz file """
+    # dump_fp = file_path
+    dump_fp = f"{dump_directory}/{file_path.split('/')[-1]}"
+    print("writing file path ", dump_fp)
+
+    with gzip.GzipFile(dump_fp, 'w') as fout:
       fout.write(json_str.encode('utf-8'))
         
-'''
+# '''
 
+""" Update on Sep 9, 2024: this block looks redundant """
 ##########################   second steps is for placing the list from that key to a different key
-
-
 '''
-directory = "./content/"
-
+# directory = "./content/"
+directory = dump_directory
 
 for filename in os.listdir(directory):
     file_path = os.path.join(directory, filename)
@@ -333,35 +376,52 @@ for filename in os.listdir(directory):
     print("writing file path ", file_path)
     with gzip.GzipFile(file_path, 'w') as fout:
       fout.write(json_str.encode('utf-8'))    
-      
-
-
+    
 '''
-##########################    dump to a new json  file with moving_source_scene
 
+
+##########################    dump to a new json  file with moving_source_scene
 # '''
 
-directory = "./content/"
+print("-" * 80)
+print("1ST DUMP DONE")
+print("-" * 80)
 
+# directory = "./content/"
+directory = dump_directory
 
-for filename in os.listdir(directory):
+total_episodeCount = 0
+iterator_ = os.listdir(directory)
+for filename in tqdm(iterator_):
     file_path = os.path.join(directory, filename)
+
+    if os.path.isdir(file_path):
+        continue
     
-    if 'moving' not in filename:
+    # if 'moving' not in filename:
+    assert 'moving' not in filename, print(filename)
     
+    if True:
       with gzip.open(file_path, "rb") as f:
         scene = json.loads(f.read()) #  , encoding="utf-8")
         
         list_episodes = scene['episodes']
+        # print('1: ', list_episodes[0].keys())
         l = []
+
+        total_episodeCount += len(list_episodes)
         
-        for ite in range(len(list_episodes)):
+        for ite in tqdm(range(len(list_episodes))): 
           
           # list_episodes[ite]['start_room'] = {'moving_source_positions':list_episodes[ite]['moving_source_positions']}
           # list_episodes[ite].pop('moving_source_positions')
           
           #import pdb; pdb.set_trace()
-          
+        
+          # if 'moving_source_positions' not in list_episodes[ite]:
+          #   print(ite, list_episodes[ite].keys())
+          assert 'moving_source_positions' in list_episodes[ite]
+
           if len(list_episodes[ite]['moving_source_positions']) > 18:
             list_episodes[ite]['moving_source_positions'] = list_episodes[ite]['moving_source_positions'][:18]
                 
@@ -379,9 +439,10 @@ for filename in os.listdir(directory):
       with gzip.GzipFile(file_path, 'w') as fout:
         fout.write(json_str.encode('utf-8'))   
         
-      with gzip.GzipFile(file_path[:-8]+'_moving_source.json.gz', 'w') as fout:
+      # with gzip.GzipFile(file_path[:-8]+'_moving_source.json.gz', 'w') as fout:
+      with gzip.GzipFile(file_path.split('.json.gz')[0] +'_moving_source.json.gz', 'w') as fout:
         fout.write(json_str2.encode('utf-8'))      
+
+print(f"Total episode count: {total_episodeCount}")
          
-
-
 # '''

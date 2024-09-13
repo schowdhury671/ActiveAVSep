@@ -312,6 +312,7 @@ class AudioCNN(nn.Module):
             return self.rn(cnn_input)
         else:
             return self.cnn(cnn_input)
+            
 
 class BinauralRIRdataset(Dataset):
 

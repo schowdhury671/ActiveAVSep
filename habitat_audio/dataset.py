@@ -42,12 +42,18 @@ class AAViDSSDataset(Dataset):
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
 
     @staticmethod
-    def check_config_paths_exist(config: Config) -> bool:
+    def check_config_paths_exist(config: Config, is_train=True) -> bool:
         r"""
         check if paths to episode datasets exist
         :param config: dataset config
         :return: flag saying if dataset paths in config exist
         """
+
+        if is_train:
+            split = config.SPLIT 
+        else:
+            split = config.EVAL_SPLIT
+
         return os.path.exists(
             config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT)
         ) and os.path.exists(config.SCENES_DIR)
@@ -57,23 +63,28 @@ class AAViDSSDataset(Dataset):
         return []
 
     @staticmethod
-    def get_scenes_to_load(config: Config) -> List[str]:
+    def get_scenes_to_load(config: Config, is_train=True) -> List[str]:
         r"""Return list of scene ids for which dataset has separate files with
         episodes.
-        
-        
         """
+        if is_train:
+            split = config.SPLIT 
+        else:
+            split = config.EVAL_SPLIT
+
         # print(AAViDSSDataset.check_config_paths_exist(config))
-        assert AAViDSSDataset.check_config_paths_exist(config), \
-            (config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT), config.SCENES_DIR)
+        assert AAViDSSDataset.check_config_paths_exist(config, is_train=is_train), \
+            (config.DATA_PATH.format(version=config.VERSION, split=split), config.SCENES_DIR)   # (config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT), config.SCENES_DIR)
+            
         dataset_dir = os.path.dirname(
-            config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT)
+            # config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT)
+            config.DATA_PATH.format(version=config.VERSION, split=split)
         )
 
         cfg = config.clone()
         cfg.defrost()
         cfg.CONTENT_SCENES = []
-        dataset = AAViDSSDataset(cfg)
+        dataset = AAViDSSDataset(cfg, is_train=is_train)
         return AAViDSSDataset._get_scenes_from_folder(
             content_scenes_path=dataset.content_scenes_path,
             dataset_dir=dataset_dir,
@@ -89,13 +100,14 @@ class AAViDSSDataset(Dataset):
             return scenes
 
         for filename in os.listdir(content_dir):
-            if filename.endswith(scene_dataset_ext):
+            # print("dtst -2: ", filename, scene_dataset_ext)
+            if filename.endswith(scene_dataset_ext) and ('_moving_source' not in filename):
                 scene = filename[: -len(scene_dataset_ext)]
                 scenes.append(scene)
         scenes.sort()
         return scenes
 
-    def __init__(self, config: Optional[Config] = None) -> None:
+    def __init__(self, config: Optional[Config] = None, is_train=True,) -> None:
         r"""Class inherited from Dataset that loads Point Navigation dataset.
         """
         self.episodes = []
@@ -104,35 +116,43 @@ class AAViDSSDataset(Dataset):
         if config is None:
             return
 
-        datasetfile_path = config.DATA_PATH.format(version=config.VERSION, split=config.SPLIT)
+        if is_train:
+            split = config.SPLIT 
+        else:
+            split = config.EVAL_SPLIT
+
+        datasetfile_path = config.DATA_PATH.format(version=config.VERSION, split=split)  # split=config.SPLIT, split=split
         
         #print("@@@@@@@@@@@@@@@@@@@@@@@@@ datasetfile_path ", datasetfile_path)
         with gzip.open(datasetfile_path, "rt") as f:
             self.from_json(f.read(), scenes_dir=config.SCENES_DIR, scene_filename=datasetfile_path)
 
-        # Read separate file for each scene
-        dataset_dir = os.path.dirname(datasetfile_path)
-        scenes = config.CONTENT_SCENES
-        
-        
-        if ALL_SCENES_MASK in scenes:
-            scenes = AAViDSSDataset._get_scenes_from_folder(
-                content_scenes_path=self.content_scenes_path,
-                dataset_dir=dataset_dir,
-            )
+        if is_train:
+            # Read separate file for each scene
+            dataset_dir = os.path.dirname(datasetfile_path)
+            scenes = config.CONTENT_SCENES
+            
+            
+            if ALL_SCENES_MASK in scenes:
+                scenes = AAViDSSDataset._get_scenes_from_folder(
+                    content_scenes_path=self.content_scenes_path,
+                    dataset_dir=dataset_dir,
+                )
 
-        last_episode_cnt = 0
-        for scene in scenes:
-            scene_filename = self.content_scenes_path.format(
-                data_path=dataset_dir, scene=scene
-            )
-            with gzip.open(scene_filename, "rt") as f:
-                self.from_json(f.read(), scenes_dir=config.SCENES_DIR, scene_filename=scene_filename)
+            last_episode_cnt = 0
+            for scene in scenes:
+                scene_filename = self.content_scenes_path.format(
+                    data_path=dataset_dir, scene=scene
+                )
+                with gzip.open(scene_filename, "rt") as f:
+                    self.from_json(f.read(), scenes_dir=config.SCENES_DIR, scene_filename=scene_filename)
 
-            num_episode = len(self.episodes) - last_episode_cnt
-            last_episode_cnt = len(self.episodes)
-            #print("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@last_episode_cnt ",last_episode_cnt )
-            logging.info('Sampled {} from {}'.format(num_episode, scene))
+                num_episode = len(self.episodes) - last_episode_cnt
+                last_episode_cnt = len(self.episodes)
+                #print("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@last_episode_cnt ",last_episode_cnt )
+                logging.info('Sampled {} from {}'.format(num_episode, scene))
+        else:
+            self.episodes = self.episodes[:config.EVAL_EPISODE_COUNT]
 
     # filter episodes by scenes
     def filter_by_scenes(self, scenes):
@@ -177,7 +197,17 @@ class AAViDSSDataset(Dataset):
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
 
         episode_cnt = 0
-        for episode in deserialized["episodes"]:
+        for episode_ in deserialized["episodes"]:
+            # print("dtst -1: ", type(episode_))
+            # print("dtst 0: ", episode_.keys())
+            # exit()
+            episode = {}
+            for k, v in episode_.items():
+                if k != "moving_source_positions":
+                    episode[k] = v
+            # print("dtst 1: ", episode.keys())
+            # print("dtst 2:", episode)
+
             episode = NavigationEpisodeCustom(**episode)
 
             if scenes_dir is not None:

@@ -33,7 +33,7 @@ TASK:
 
 DATASET:
   TYPE: "AAViDSS"
-  SPLIT: "train_731243episodes"
+  SPLIT: "train_movingSource_731243episodes"  # train_movingSource_731243episodes_20episodesPerScene, train_movingSource_731243episodes, 
   VERSION: 'v1'
   CONTENT_SCENES: ["*"]
   SCENES_DIR: "data/scene_datasets/mp3d"

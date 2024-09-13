@@ -1,12 +1,28 @@
+import os
 import json
 import random
 import numpy as np
 
+
+"""
+Update on Sep 9, 2024: This doesn't change the dataset size. Hence not running.  
+"""
+
+
+ROOT_DR = f"/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/passive_datasets/v1"
+assert os.path.isdir(ROOT_DR)
+
+TRAIN_FP = f"{ROOT_DR}/train_locationPredictor/allepisodesPerScene.json"
+assert os.path.isfile(TRAIN_FP)
+
+VAL_FP = f"{ROOT_DR}/val_locationPredictor/allepisodesPerScene.json"
+assert os.path.isfile(VAL_FP)
+
 # Read the JSON file
-with open('train_wavs.json', 'r') as file:
+with open(TRAIN_FP, 'r') as file:
     data_train = json.load(file)
 
-with open('val_wavs.json', 'r') as file:
+with open(VAL_FP, 'r') as file:
     data_val = json.load(file)
 
 # Print the length
@@ -25,8 +41,12 @@ MAX_VAL = 58.0 # global max
 for data_json_str in ['val','train']:
     if 'train' in data_json_str:
         data_json = data_train
+        dump_fp = f"{TRAIN_FP.split('.json')[0]}_wavs_filtered.json"
     else:
         data_json = data_val
+        dump_fp = f"{VAL_FP.split('.json')[0]}_wavs_filtered.json"
+
+    # print('0: ', len(data_json[data_json_str]))
     new_data_list = []
     for data in data_json[data_json_str]:
         abs_del_x, abs_del_y = np.abs(data['target'][0]), np.abs(data['target'][1])
@@ -35,8 +55,10 @@ for data_json_str in ['val','train']:
     
     dict_wavs_filtered = {data_json_str:new_data_list}
 
+    # print("1: ", dump_fp, len(dict_wavs_filtered[data_json_str]))
+
     # import pdb; pdb.set_trace()
-    with open(str(data_json_str) + "_wavs_filtered.json", "w") as outfile:
+    with open(dump_fp, "w") as outfile:    # str(data_json_str) + "_wavs_filtered.json", dump_fp
         # json_data refers to the above JSON
         json.dump(dict_wavs_filtered, outfile)
 

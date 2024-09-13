@@ -18,6 +18,8 @@ SIMULATOR:
     GT_MONO_MAG_NORM: 1.2
 
     MONO_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/train_preprocessed"
+    MONO_VAL_UNHEARD_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/valUnheard_preprocessed"
+    MONO_TEST_UNHEARD_DIR: "data/audio_data/libriSpeech100Classes_MITMusic_ESC50/min20s_clips/testUnheard_preprocessed"
 
   TYPE: "HabitatSimAudioEnabled"
   ACTION_SPACE_CONFIG: "audio-separation"
@@ -32,7 +34,7 @@ TASK:
 
 DATASET:
   TYPE: "AAViDSS"
-  SPLIT: "train_731243episodes"
+  SPLIT: "train_movingSource_731243episodes"  # train_movingSource_731243episodes_20episodesPerScene, train_movingSource_731243episodes, 
   VERSION: 'v1'
   CONTENT_SCENES: ["*"]
   SCENES_DIR: "data/scene_datasets/mp3d"

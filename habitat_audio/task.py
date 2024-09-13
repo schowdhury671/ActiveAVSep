@@ -29,12 +29,14 @@ from habitat.utils.visualizations import maps
 IS_MOVING_SOURCE = True
 
 def merge_sim_episode_config(
-    sim_config: Config, episode: Type[Episode]
+    sim_config: Config, episode: Type[Episode], is_train: bool = True,
 ) -> Any:
     
     sim_config.defrost()
     # here's where the scene update happens, extract the scene name out of the path
     sim_config.SCENE = episode.scene_id
+    # print("tsk -1: ", is_train, sim_config.SCENE)
+    # print("-" * 80)
     sim_config.freeze()
     if (
         episode.start_position is not None
@@ -50,11 +52,14 @@ def merge_sim_episode_config(
         agent_cfg.AUDIO_SOURCE_POSITIONS = []
         
         if IS_MOVING_SOURCE:
-            if 'val' in sim_config.AUDIO.DATASET_SPLIT:
-                f_name = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/val_100episodes/content/'+episode.scene_id.split('/')[3]+'_moving_source.json.gz'
+            # if 'val' in sim_config.AUDIO.DATASET_SPLIT:
+            if is_train:
+                # f_name = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/train_731243episodes/content/'+episode.scene_id.split('/')[3]+'_moving_source.json.gz'
+                f_name = '/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/active_datasets/v1/train_movingSource_731243episodes/content/' + episode.scene_id.split('/')[3] + '_moving_source.json.gz'    # train_movingSource_731243episodes_20episodesPerScene, train_movingSource_731243episodes, 
             else:
-                f_name = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/train_731243episodes/content/'+episode.scene_id.split('/')[3]+'_moving_source.json.gz'
-        
+                # raise NotImplementedError
+                # # f_name = '/fs/nexus-projects/ego_data/active_avsep/active-AV-dynamic-separation/data/active_datasets/v1_old/val_100episodes/content/'+episode.scene_id.split('/')[3]+'_moving_source.json.gz'
+                f_name = '/checkpoint/sagnikmjr2002/code/ActiveAVSepMovingSource/data/active_datasets/v1/val_movingSource_100episodes/content/' + 'val_movingSource_100episodes' + '_moving_source.json.gz'   # episode.scene_id.split('/')[3],         
         
             with gzip.open(f_name, "rb") as f:
                 mov_src = json.loads(f.read())
@@ -64,13 +69,23 @@ def merge_sim_episode_config(
             for ll in mov_src_list:
                 key_val = list(ll.keys())[0]
                 # assert key_val == episode.episode_id
-                mov_src_dict.update({key_val:ll[key_val]})
+
+                # mov_src_dict.update({key_val:ll[key_val]})
+
+                lst_movingSourceNodes_ = ll[key_val]
+                lst_movingSourceNodes = []
+                for ele in lst_movingSourceNodes_:
+                    lst_movingSourceNodes.append(int(ele))
+                mov_src_dict.update({key_val: lst_movingSourceNodes})
         
         for it, source in enumerate(episode.goals):
             agent_cfg.AUDIO_SOURCE_POSITIONS.append(source.position)
 
             if IS_MOVING_SOURCE:
                 if it == 0:
+                    if str(episode.episode_id) not in mov_src_dict:
+                        print("tsk 1: ", mov_src_dict.keys())
+                        print("tsk 2: ", is_train, episode.episode_id)
                     agent_cfg.MOVING_SOURCE_POSITIONS = mov_src_dict[str(episode.episode_id)]  #[source.position]
               
         agent_cfg.SOUND_NAMES = []
@@ -90,9 +105,9 @@ def merge_sim_episode_config(
 @registry.register_task(name="AAViDSS")
 class AAViDSSTask(NavigationTask):
     def overwrite_sim_config(
-        self, sim_config: Any, episode: Type[Episode]
+        self, sim_config: Any, episode: Type[Episode], is_train: bool = True,
     ) -> Any:
-        return merge_sim_episode_config(sim_config, episode)
+        return merge_sim_episode_config(sim_config, episode, is_train=is_train)
 
     def _check_episode_is_active(self, *args: Any, **kwargs: Any) -> bool:
         return self._sim._is_episode_active

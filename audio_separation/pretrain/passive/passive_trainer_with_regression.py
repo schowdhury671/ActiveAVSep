@@ -385,6 +385,7 @@ class PassiveTrainerWithRegression(BaseRLTrainer):
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+        """ run dirs copied from active training config: regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1 (probably used), regression_resnet_filtered_30oct_rectified_40_lr_1e-4_l1_factor1  """
         root_dir = 'data/active_datasets/v1_old/train_731243episodes/regression_resnet_7nov_lr_1e-4_l1_factor1_pretrainedSep'
         encoder_type='resnet' # choices are 'cnn' or 'resnet'. 'cnn' will invoke simple CNN
         device_ids = list(range(torch.cuda.device_count()))     #[0,1,2,3] # for 4 gpus
